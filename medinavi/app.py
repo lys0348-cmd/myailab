@@ -558,8 +558,14 @@ async def parse_symptom(request: Request, body: SymptomRequest):
     소아라는 이유만으로 pediatric을 고르지 않는다. 화상·외상·분만처럼 더 구체적인 분류가 있으면 그 분류를 고르고, 아이의 일반적인 증상(발열, 경련 등)일 때만 pediatric을 고른다.
     pediatric은 문장에 나이나 '아이', '아기', '영아', '초등학생'처럼 소아임을 알 수 있는 말이 있을 때만 고른다. 나이를 알 수 없는 '열이 나요' 같은 문장은 'unclear'다.
     서로 다른 분류의 핵심 증상이 함께 있으면(예: 가슴 통증과 한쪽 팔다리 마비, 교통사고와 화상) 더 생명에 직접 관련된 쪽을 category_id에, 다른 하나를 secondary_category_id에 넣는다. 분류는 최대 2개다.
+    두 번째 분류는 서로 다른 치료 역량이 필요한 별개의 문제가 함께 있을 때만 넣고, 애매하면 null로 둔다.
+    다음은 두 번째 분류가 아니다:
+    - 사고, 구조, 화재 현장, 감전, 기계 같은 원인이나 상황을 나타내는 말
+    - 화상, 절단, 칼에 찔림처럼 그 자체가 다친 방식인 경우: 화상은 burn, 절단은 amputation 하나만 고르고 trauma를 더하지 않는다. 단, 화상·절단과 따로 다른 곳을 크게 다친 내용(예: 교통사고로 다쳤고 화상도 입음)이 있으면 두 분류로 넣는다
+    - 외상으로 생긴 배의 출혈·통증: trauma 하나만 고른다 (abdominal은 외상이 아닌 복통이다)
+    - 열, 발열 같은 동반 증상
+    pediatric은 두 번째 분류로 넣지 않는다. 아이라는 점은 is_child로만 표시한다.
     한 분류만 해당하면 secondary_category_id는 null이다. 'unclear'는 증상이 막연해서 어느 분류인지 알 수 없을 때만 고르고, 이때 secondary_category_id는 null이다.
-    아이라는 점은 is_child로 표시하므로, 아이의 화상·외상처럼 더 구체적인 분류가 있으면 pediatric을 두 번째 분류로 넣지 않는다.
     symptom_keywords에는 분류의 근거가 된 단어나 짧은 구를 문장에서 그대로 옮겨 최대 5개 넣는다.
     is_child는 나이나 '아이', '영아', '신생아'처럼 만 18세 미만임이 명시되면 true, 성인임이 명시되면 false, 알 수 없으면 null이다.
     max_minutes는 '30분 안에'처럼 최대 이동시간이 명시된 경우에만 분 단위 정수로 넣고, 없으면 null이다.
@@ -601,7 +607,8 @@ async def parse_symptom(request: Request, body: SymptomRequest):
     category_id = result.category_id if result.category_id in allowed_ids else "unclear"
     # 두 번째 분류는 목록에 있고, 첫 분류와 다르고, 둘 다 'unclear'가 아닐 때만 쓴다.
     secondary = result.secondary_category_id
-    if category_id == "unclear" or secondary not in allowed_ids or secondary in (category_id, "unclear"):
+    # 소아는 is_child로 표시하므로 두 번째 분류로 쓰지 않는다.
+    if category_id == "unclear" or secondary not in allowed_ids or secondary in (category_id, "unclear", "pediatric"):
         secondary = None
     return SymptomClassification(category_id = category_id,
                                  secondary_category_id = secondary,

@@ -192,9 +192,10 @@ class SymptomParse(unittest.TestCase):
     def test_secondary_category(self):
         out = lambda primary, secondary: {"category_id": primary, "secondary_category_id": secondary, "symptom_keywords": [], "is_child": None, "max_minutes": None}
         self.assertEqual(self.parse(out("trauma", "burn"), "교통사고와 화상").secondary_category_id, "burn")
-        for primary, secondary in [("trauma", "trauma"), ("trauma", "unclear"), ("unclear", "burn"), ("trauma", "fire")]:
+        for primary, secondary in [("trauma", "trauma"), ("trauma", "unclear"), ("unclear", "burn"), ("trauma", "fire"), ("abdominal", "pediatric")]:
             self.assertIsNone(self.parse(out(primary, secondary), "문장").secondary_category_id, (primary, secondary))
         self.assertIn("secondary_category_id에 넣는다", self.openai.last["instructions"])
+        self.assertIn("화상은 burn, 절단은 amputation 하나만", self.openai.last["instructions"])
 
     def test_no_key(self):
         app, _, _ = load_app()
