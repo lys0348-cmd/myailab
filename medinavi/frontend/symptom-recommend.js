@@ -313,6 +313,8 @@
       }
       pendingQuery = query;
       status.textContent = "";
+      // 새 증상 검색은 직전 검색의 이동시간을 이어받지 않는다 (문장에 시간이 없으면 기본 60분).
+      minutesInput.value = "60";
       openConfirm(parsed);
     } catch (error) {
       status.textContent = error.message || "증상 분류를 준비하지 못했어요.";
