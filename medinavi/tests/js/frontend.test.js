@@ -40,6 +40,7 @@ function realtimeResponse(items, {minutesAgo = 4} = {}) {
     const [available, total] = combos[index % 6];
     const illness = ILLNESS.map(label => ({label, status: "확인 필요", note: ""}));
     illness[0].status = ["가능", "불가", "확인 필요"][index % 3];          // 심근경색
+    illness[1].status = index % 3 === 0 ? "불가" : "가능";                   // 뇌경색: 심근경색 '가능' 병원은 불가
     illness[15].status = "가능";                                           // 분만
     hospitals[item.hpid] = {
       updated_at: updated, has_beds: true, has_illness: index !== 5, er_available: available, er_total: total,
@@ -308,7 +309,7 @@ test("조건 바꾸기: 직전 조건을 함께 보내고, 바뀐 항목을 알�
   els["refine-query"].value = "7살 아이예요";
   await els["refine-form"].listeners.submit[0]({preventDefault() {}});
   const sent = page.symptomRequests.at(-1);
-  assert.deepStrictEqual(sent, {query: "7살 아이예요", previous: {query: "가슴 통증", category_id: "cardiac", is_child: false, max_minutes: 300}});
+  assert.deepStrictEqual(sent, {query: "7살 아이예요", previous: {query: "가슴 통증", category_id: "cardiac", secondary_category_id: null, is_child: false, max_minutes: 300}});
   assert.ok(els["symptom-confirm"].open, "바뀐 조건은 확인창에서 다시 확인해요");
   assert.strictEqual(els["symptom-note"].textContent, "바뀐 항목: 소아 아니오 → 예");
   assert.strictEqual(els["rec-type"].value, "지역응급의료기관", "언급 안 한 유형은 그대로");
@@ -321,6 +322,34 @@ test("조건 바꾸기: 직전 조건을 함께 보내고, 바뀐 항목을 알�
   els["refine-query"].value = "30분 안으로";
   await els["refine-form"].listeners.submit[0]({preventDefault() {}});
   assert.strictEqual(page.symptomRequests.at(-1).previous.query, "가슴 통증 / 7살 아이예요");
+});
+
+test("두 분류: 모두 일치가 없으면 일부 일치 묶음과 한 분류만 다시 찾기 버튼", async () => {
+  const page = createPage({symptom: {category_id: "stroke", secondary_category_id: "cardiac", symptom_keywords: [], is_child: false, max_minutes: 300}});
+  await start(page);
+  const {els} = page;
+  els["symptom-query"].value = "가슴이 아프고 한쪽 팔다리에 힘이 빠져요";
+  await els["symptom-search"].listeners.submit[0]({preventDefault() {}});
+  assert.strictEqual(els["confirm-category2"].value, "cardiac");
+  assert.match(els["confirm-required"].textContent, /뇌경색.*\|.*심근경색.*두 분류 조건을 모두 확인/);
+  for (const listener of els["symptom-go"].listeners.click) await listener();
+  await tick();
+  assert.strictEqual(page.buttonsIn("recommend-results").length, 0);
+  assert.match(els["recommend-status"].textContent, /\+ 흉통 · 심혈관 의심 · 예상 300분 이내 모두 일치 0곳 · 일부 일치 \d+곳/);
+  assert.match(els["recommend-status"].textContent, /모두 일치 0곳 → 300분 이내 0곳/);
+  const partial = page.buttonsIn("recommend-partial-list");
+  assert.ok(partial.length > 0 && !els["recommend-partial"].hidden && els["recommend-partial"].open);
+  assert.ok(partial.some(b => /흉통 · 심혈관 의심 조건 빠짐: \[재관류중재술\] 심근경색 불일치/.test(b.textContent)), partial.map(b => b.textContent).join("\n"));
+  assert.match(els["refine-current"].textContent, /현재 조건: .+ \+ 흉통 · 심혈관 의심 · 소아 아님/);
+  const retry = els["recommend-fallback"].children;
+  assert.ok(!els["recommend-fallback"].hidden && retry.length === 2);
+  assert.strictEqual(retry[1].textContent, "흉통 · 심혈관 의심만 적용해서 다시 찾기");
+  await retry[1].fire("click");
+  await tick();
+  const results = page.buttonsIn("recommend-results");
+  assert.ok(results.length > 0 && results.every(b => page.realtime.hospitals[b.dataset.hpid].illness[0].status === "가능"));
+  assert.ok(els["recommend-partial"].hidden && els["recommend-fallback"].hidden);
+  assert.match(els["refine-current"].textContent, /현재 조건: 흉통 · 심혈관 의심 · 소아 아님/);
 });
 
 test("병원 상세: 추가 확인 사항에 전화 확인, 검색 조건 확인 필요, 공지, 이동시간 한계", async () => {

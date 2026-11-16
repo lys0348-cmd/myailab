@@ -1,5 +1,5 @@
 {
- "description": "AI 증상 분류 시험 문장 (임시 분류표 draft-2026-11-12 기준). 정답은 팀이 정한 임시 기준이며 자문 후 함께 검토한다. 가상의 상황이며 실제 환자 정보가 아니다.",
+ "description": "AI 증상 분류 시험 문장 (임시 분류표 draft-2026-11-12 기준). 정답은 팀이 정한 임시 기준이며 자문 후 함께 검토한다. 가상의 상황이며 실제 환자 정보가 아니다. 증상이 두 분류에 걸치면 expected_secondary에 두 번째 분류를 적고, 순서와 관계없이 두 분류가 모두 맞아야 정답이다.",
  "cases": [
   {
    "id": 1,
@@ -286,8 +286,9 @@
   {
    "id": 48,
    "text": "가슴이 아프고 한쪽 팔다리에 힘이 빠져요",
-   "expected_category": "unclear",
-   "expected_is_child": null
+   "expected_category": "cardiac",
+   "expected_is_child": null,
+   "expected_secondary": "stroke"
   },
   {
    "id": 49,
@@ -299,6 +300,20 @@
    "id": 50,
    "text": "숨이 차요",
    "expected_category": "unclear",
+   "expected_is_child": null
+  },
+  {
+   "id": 51,
+   "text": "교통사고로 다쳤고 차에 불이 나서 팔에 화상도 입었어요",
+   "expected_category": "trauma",
+   "expected_secondary": "burn",
+   "expected_is_child": null
+  },
+  {
+   "id": 52,
+   "text": "임신 30주인데 교통사고가 나서 배를 부딪혔어요",
+   "expected_category": "obstetric",
+   "expected_secondary": "trauma",
    "expected_is_child": null
   }
  ]
