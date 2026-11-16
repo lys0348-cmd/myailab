@@ -518,6 +518,7 @@ class PreviousCondition(BaseModel):
     """'조건 바꾸기'에서 보내는 직전 검색 조건."""
     query: str = Field(default = "", max_length = 300)
     category_id: str = Field(default = "unclear", max_length = 40)
+    secondary_category_id: str | None = Field(default = None, max_length = 40)
     is_child: bool | None = None
     max_minutes: int | None = None
 
@@ -527,6 +528,8 @@ class SymptomRequest(BaseModel):
 
 class SymptomClassification(BaseModel):
     category_id: str
+    # 증상이 두 분류에 걸칠 때 두 번째 분류 (없으면 null). 두 분류의 필수 조건을 모두 확인한다.
+    secondary_category_id: str | None
     symptom_keywords: list[str]
     is_child: bool | None
     max_minutes: int | None
@@ -554,7 +557,9 @@ async def parse_symptom(request: Request, body: SymptomRequest):
     여러 분류에 비슷하게 해당하거나 판단하기 어려우면 'unclear'를 고른다. 문장에 없는 증상을 추측하지 않는다.
     소아라는 이유만으로 pediatric을 고르지 않는다. 화상·외상·분만처럼 더 구체적인 분류가 있으면 그 분류를 고르고, 아이의 일반적인 증상(발열, 경련 등)일 때만 pediatric을 고른다.
     pediatric은 문장에 나이나 '아이', '아기', '영아', '초등학생'처럼 소아임을 알 수 있는 말이 있을 때만 고른다. 나이를 알 수 없는 '열이 나요' 같은 문장은 'unclear'다.
-    서로 다른 분류의 핵심 증상이 함께 있으면(예: 가슴 통증과 한쪽 팔다리 마비) 하나를 고르지 말고 'unclear'를 고른다.
+    서로 다른 분류의 핵심 증상이 함께 있으면(예: 가슴 통증과 한쪽 팔다리 마비, 교통사고와 화상) 더 생명에 직접 관련된 쪽을 category_id에, 다른 하나를 secondary_category_id에 넣는다. 분류는 최대 2개다.
+    한 분류만 해당하면 secondary_category_id는 null이다. 'unclear'는 증상이 막연해서 어느 분류인지 알 수 없을 때만 고르고, 이때 secondary_category_id는 null이다.
+    아이라는 점은 is_child로 표시하므로, 아이의 화상·외상처럼 더 구체적인 분류가 있으면 pediatric을 두 번째 분류로 넣지 않는다.
     symptom_keywords에는 분류의 근거가 된 단어나 짧은 구를 문장에서 그대로 옮겨 최대 5개 넣는다.
     is_child는 나이나 '아이', '영아', '신생아'처럼 만 18세 미만임이 명시되면 true, 성인임이 명시되면 false, 알 수 없으면 null이다.
     max_minutes는 '30분 안에'처럼 최대 이동시간이 명시된 경우에만 분 단위 정수로 넣고, 없으면 null이다.
@@ -566,10 +571,10 @@ async def parse_symptom(request: Request, body: SymptomRequest):
         # 직전 조건을 유지하고, 새로 입력한 문장에 나온 항목만 바꾼다.
         instructions += """
     입력은 '직전 조건'과 '바뀐 내용'으로 주어진다. 바뀐 내용에 나온 항목만 바꾸고, 언급되지 않은 항목은 직전 조건 값을 그대로 돌려준다.
-    바뀐 내용에 새 증상이 나오면 직전 증상과 합쳐 분류를 다시 고른다. 증상이 아닌 내용(나이, 시간)만 바뀌면 직전 분류를 유지한다.
+    바뀐 내용에 새 증상이 나오면 직전 증상과 합쳐 분류를 다시 고른다. 다른 분류의 증상이 더해지면 직전 분류와 새 분류를 두 분류로 넣는다. 증상이 아닌 내용(나이, 시간)만 바뀌면 직전 분류를 그대로 유지한다.
     symptom_keywords는 직전 문장이나 바뀐 내용에서 그대로 옮긴다.
     """
-        text = (f"직전 문장: {previous.query}\n직전 분류: {previous.category_id}\n"
+        text = (f"직전 문장: {previous.query}\n직전 분류: {previous.category_id}\n직전 두 번째 분류: {previous.secondary_category_id}\n"
                 f"직전 소아 여부: {previous.is_child}\n직전 최대 이동시간(분): {previous.max_minutes}\n바뀐 내용: {query}")
 
     try:
@@ -593,7 +598,13 @@ async def parse_symptom(request: Request, body: SymptomRequest):
         # AI가 값을 비워 돌려주면 직전 값을 유지한다.
         is_child = previous.is_child if is_child is None else is_child
         max_minutes = max_minutes or (previous.max_minutes if previous.max_minutes and 0 < previous.max_minutes <= 600 else None)
-    return SymptomClassification(category_id = result.category_id if result.category_id in allowed_ids else "unclear",
+    category_id = result.category_id if result.category_id in allowed_ids else "unclear"
+    # 두 번째 분류는 목록에 있고, 첫 분류와 다르고, 둘 다 'unclear'가 아닐 때만 쓴다.
+    secondary = result.secondary_category_id
+    if category_id == "unclear" or secondary not in allowed_ids or secondary in (category_id, "unclear"):
+        secondary = None
+    return SymptomClassification(category_id = category_id,
+                                 secondary_category_id = secondary,
                                  symptom_keywords = list(dict.fromkeys(keywords))[:5],
                                  is_child = is_child,
                                  max_minutes = max_minutes,)

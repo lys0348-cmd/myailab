@@ -50,18 +50,20 @@ def main():
     child_total = child_correct = 0
     for index, case in enumerate(cases, 1):
         output, error = classify(args.url, case["text"])
-        got = output.get("category_id") if output else None
-        ok = got == case["expected_category"]
-        per_category[case["expected_category"]]["total"] += 1
-        per_category[case["expected_category"]]["correct"] += ok
+        # 두 분류가 섞인 문장은 순서와 관계없이 두 분류가 모두 맞아야 정답이다.
+        expected = "+".join(sorted(filter(None, [case["expected_category"], case.get("expected_secondary")])))
+        got = "+".join(sorted(filter(None, [output.get("category_id"), output.get("secondary_category_id")]))) if output else None
+        ok = got == expected
+        per_category[expected]["total"] += 1
+        per_category[expected]["correct"] += ok
         if case["expected_is_child"] is not None and output:
             child_total += 1
             child_correct += output.get("is_child") == case["expected_is_child"]
         mark = "O" if ok else "X"
-        print(f"[{index:2}/{len(cases)}] {mark} 기대 {case['expected_category']:<11} 결과 {got or error!s:<11} · {case['text']}"
+        print(f"[{index:2}/{len(cases)}] {mark} 기대 {expected:<11} 결과 {got or error!s:<11} · {case['text']}"
               + (f" · 참고 표현 {output.get('symptom_keywords')}" if output else ""))
         if not ok:
-            misses.append((case, got or error))
+            misses.append((case, expected, got or error))
         results.append({**case, "result": output, "error": error, "correct": ok})
         if index < len(cases):
             time.sleep(args.delay)
@@ -75,8 +77,8 @@ def main():
         print(f"소아 여부 정확도: {child_correct}/{child_total} ({child_correct / child_total:.0%})")
     if misses:
         print("\n[틀린 문장]")
-        for case, got in misses:
-            print(f"  #{case['id']} 기대 {case['expected_category']} → 결과 {got}: {case['text']}")
+        for case, expected, got in misses:
+            print(f"  #{case['id']} 기대 {expected} → 결과 {got}: {case['text']}")
 
     out = BASE_DIR / "data" / f"eval_symptom_{datetime.now():%Y%m%d_%H%M}.json"
     out.write_text(json.dumps({"url": args.url, "accuracy": correct / total, "results": results}, ensure_ascii=False, indent=1), encoding="utf-8")

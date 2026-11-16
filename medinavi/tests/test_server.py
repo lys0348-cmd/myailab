@@ -170,24 +170,31 @@ class SymptomParse(unittest.TestCase):
         return run(self.app.app.routes["/api/symptom/parse"](FakeRequest(), self.app.SymptomRequest(query=query)))
 
     def test_valid_and_filtered(self):
-        result = self.parse({"category_id": "cardiac", "symptom_keywords": ["가슴 통증", "식은땀", "심근경색"], "is_child": False, "max_minutes": 40},
+        result = self.parse({"category_id": "cardiac", "secondary_category_id": None, "symptom_keywords": ["가슴 통증", "식은땀", "심근경색"], "is_child": False, "max_minutes": 40},
                             "70대 남성 가슴 통증과 식은땀, 40분 안에")
         self.assertEqual((result.category_id, result.symptom_keywords, result.is_child, result.max_minutes), ("cardiac", ["가슴 통증", "식은땀"], False, 40))
         self.assertIn("- cardiac: 흉통 · 심혈관 의심", self.openai.last["instructions"])
 
     def test_invalid_values(self):
-        result = self.parse({"category_id": "heart", "symptom_keywords": [], "is_child": None, "max_minutes": 0}, "어지러움")
+        result = self.parse({"category_id": "heart", "secondary_category_id": None, "symptom_keywords": [], "is_child": None, "max_minutes": 0}, "어지러움")
         self.assertEqual((result.category_id, result.max_minutes), ("unclear", None))
 
     def test_refine_keeps_previous(self):
-        previous = self.app.PreviousCondition(query="교통사고로 다리를 다쳤어요", category_id="trauma", is_child=None, max_minutes=60)
-        self.openai.output = {"category_id": "trauma", "symptom_keywords": ["교통사고", "7살", "없는말"], "is_child": True, "max_minutes": None}
+        previous = self.app.PreviousCondition(query="교통사고로 다리를 다쳤어요", category_id="trauma", secondary_category_id=None, is_child=None, max_minutes=60)
+        self.openai.output = {"category_id": "trauma", "secondary_category_id": None, "symptom_keywords": ["교통사고", "7살", "없는말"], "is_child": True, "max_minutes": None}
         result = run(self.app.app.routes["/api/symptom/parse"](FakeRequest(), self.app.SymptomRequest(query="7살 아이예요", previous=previous)))
         self.assertEqual((result.category_id, result.is_child, result.max_minutes), ("trauma", True, 60), "언급 안 된 시간은 유지해야 해요")
         self.assertEqual(result.symptom_keywords, ["교통사고", "7살"])
         self.assertIn("직전 분류: trauma", self.openai.last["input"])
         self.assertIn("바뀐 내용: 7살 아이예요", self.openai.last["input"])
         self.assertIn("언급되지 않은 항목은 직전 조건 값을", self.openai.last["instructions"])
+
+    def test_secondary_category(self):
+        out = lambda primary, secondary: {"category_id": primary, "secondary_category_id": secondary, "symptom_keywords": [], "is_child": None, "max_minutes": None}
+        self.assertEqual(self.parse(out("trauma", "burn"), "교통사고와 화상").secondary_category_id, "burn")
+        for primary, secondary in [("trauma", "trauma"), ("trauma", "unclear"), ("unclear", "burn"), ("trauma", "fire")]:
+            self.assertIsNone(self.parse(out(primary, secondary), "문장").secondary_category_id, (primary, secondary))
+        self.assertIn("secondary_category_id에 넣는다", self.openai.last["instructions"])
 
     def test_no_key(self):
         app, _, _ = load_app()
@@ -244,6 +251,7 @@ class SymptomCases(unittest.TestCase):
         cases = json.loads((TESTS_DIR / "symptom_cases.json").read_text(encoding="utf-8"))["cases"]
         self.assertGreaterEqual(len(cases), 50)
         self.assertEqual([case["id"] for case in cases if case["expected_category"] not in ids], [])
+        self.assertEqual([case["id"] for case in cases if case.get("expected_secondary") not in ids | {None}], [])
 
 
 if __name__ == "__main__":

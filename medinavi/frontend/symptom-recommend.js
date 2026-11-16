@@ -8,6 +8,7 @@
   const status = $("#symptom-status");
   const dialog = $("#symptom-confirm");
   const categorySelect = $("#confirm-category");
+  const categorySelect2 = $("#confirm-category2");
   const keywordsText = $("#confirm-keywords");
   const childBox = $("#confirm-child");
   const minutesInput = $("#rec-minutes");
@@ -20,6 +21,10 @@
   const unknownBox = $("#recommend-unknown");
   const unknownList = $("#recommend-unknown-list");
   const unknownSummary = $("#recommend-unknown-summary");
+  const partialBox = $("#recommend-partial");
+  const partialList = $("#recommend-partial-list");
+  const partialSummary = $("#recommend-partial-summary");
+  const fallbackBox = $("#recommend-fallback");
   const notice = $("#recommend-notice");
   const refineForm = $("#refine-form");
   const refineInput = $("#refine-query");
@@ -40,6 +45,8 @@
     rules = body;
     categorySelect.replaceChildren();
     for (const category of rules.categories) categorySelect.add(new Option(category.label, category.id));
+    categorySelect2.replaceChildren(new Option("없음", ""));
+    for (const category of rules.categories) if (category.id !== "unclear") categorySelect2.add(new Option(category.label, category.id));
     for (const badge of document.querySelectorAll(".rules-badge")) {
       badge.textContent = rules.status + (rules.pre_ktas?.enabled ? "" : " · Pre-KTAS " + (rules.pre_ktas?.notice || "미적용"));
     }
@@ -56,14 +63,30 @@
     for (const type of types) typeSelect.add(new Option(type, type));
   }
 
-  function describeRequired() {
-    const selected = category(categorySelect.value);
+  // 확인창에서 고른 분류들 (두 번째 분류는 첫 분류와 다를 때만, 첫 분류가 '분류 어려움'이면 두 번째만)
+  function selectedIds(primary = categorySelect.value, secondary = categorySelect2.value) {
+    if (!secondary || secondary === primary) return [primary];
+    return primary === "unclear" ? [secondary] : [primary, secondary];
+  }
+
+  function requiredTextOf(selected) {
     const required = (selected.required || []).map(item => item.name);
     const any = (selected.required_any || []).map(item => item.name);
     const parts = [];
     if (required.length) parts.push("모두 가능해야 일치: " + required.join(", "));
     if (any.length) parts.push("하나 이상 가능하면 일치: " + any.join(" 또는 "));
-    requiredText.textContent = parts.length ? parts.join(" / ") : (selected.note || "필수 조건 없이 이동시간순으로 보여줘요.");
+    return parts.length ? parts.join(" / ") : (selected.note || "필수 조건 없이 이동시간순으로 보여줘요.");
+  }
+
+  function describeRequired() {
+    const ids = selectedIds();
+    requiredText.textContent = ids.length === 1
+      ? requiredTextOf(category(ids[0]))
+      : ids.map(id => category(id).label + " — " + requiredTextOf(category(id))).join(" | ") + " (두 분류 조건을 모두 확인해요)";
+  }
+
+  function labelOf(ids) {
+    return ids.map(id => category(id).label).join(" + ");
   }
 
   function clearArea() {
@@ -72,6 +95,10 @@
     results.replaceChildren();
     unknownList.replaceChildren();
     unknownBox.hidden = true;
+    partialList.replaceChildren();
+    partialBox.hidden = true;
+    fallbackBox.replaceChildren();
+    fallbackBox.hidden = true;
     areaStatus.textContent = "";
     area.hidden = true;
     refineForm.hidden = true;
@@ -80,6 +107,7 @@
   // 확인창에 AI 분류 결과를 채운다. AI가 실패하면 parsed 없이 직전 값(또는 기본값)으로 연다.
   function openConfirm(parsed, fallback = null) {
     categorySelect.value = parsed?.category_id || fallback?.category_id || "unclear";
+    categorySelect2.value = (parsed ? parsed.secondary_category_id : fallback?.secondary_category_id) || "";
     keywordsText.textContent = parsed?.symptom_keywords?.length
       ? "AI가 참고한 표현: " + parsed.symptom_keywords.map(word => "'" + word + "'").join(", ")
       : "AI가 참고한 표현 없음";
@@ -92,22 +120,24 @@
   }
 
   function conditionText(condition) {
-    return [category(condition.category_id).label, condition.is_child ? "소아" : "소아 아님",
+    return [labelOf(selectedIds(condition.category_id, condition.secondary_category_id)), condition.is_child ? "소아" : "소아 아님",
       condition.max_minutes + "분 이내", condition.type || "전체 유형"].join(" · ");
   }
 
   // 직전 조건과 확인창 값을 비교해 바뀐 항목을 알려준다.
   function describeChanges(before) {
-    const after = {category_id: categorySelect.value, is_child: childBox.checked, max_minutes: Number(minutesInput.value)};
+    const after = {category_id: categorySelect.value, secondary_category_id: categorySelect2.value, is_child: childBox.checked, max_minutes: Number(minutesInput.value)};
     const changes = [];
-    if (after.category_id !== before.category_id) changes.push("증상 분류 " + category(before.category_id).label + " → " + category(after.category_id).label);
+    const beforeLabel = labelOf(selectedIds(before.category_id, before.secondary_category_id));
+    const afterLabel = labelOf(selectedIds(after.category_id, after.secondary_category_id));
+    if (beforeLabel !== afterLabel) changes.push("증상 분류 " + beforeLabel + " → " + afterLabel);
     if (after.is_child !== Boolean(before.is_child)) changes.push("소아 " + (before.is_child ? "예" : "아니오") + " → " + (after.is_child ? "예" : "아니오"));
     if (after.max_minutes !== before.max_minutes) changes.push("이동시간 " + before.max_minutes + "분 → " + after.max_minutes + "분");
     return changes.length ? "바뀐 항목: " + changes.join(", ") : "바뀐 항목이 없어요. 직전 조건 그대로예요. 필요하면 아래에서 직접 고쳐 주세요.";
   }
 
   // ---- 역량 판정 (공통 판정 judgement.js 사용) ----------------------------
-  function evaluate(hospital, selected, isChild) {
+  function evaluateOne(hospital, selected, isChild) {
     // 소아일 때 규칙표의 child_required를 필수 조건에 더한다 (자문 후 채울 자리).
     const required = [...(selected.required || []), ...(isChild ? rules.child_required || [] : [])];
     const any = selected.required_any || [];
@@ -118,8 +148,25 @@
     return window.medinaviJudge.evaluate(hospital, {required, any, reference});
   }
 
+  // 두 분류면 분류마다 따로 판정한다: 모두 일치 → 일치, 한쪽만 일치(다른 쪽 불일치) → 일부 일치.
+  function evaluate(hospital, ids, isChild) {
+    const each = ids.map(id => ({id, ...evaluateOne(hospital, category(id), isChild)}));
+    const seen = new Set();
+    const checks = each.flatMap(result => result.checks).filter(check => {
+      const key = check.kind + ":" + check.type + ":" + check.name;
+      return !seen.has(key) && seen.add(key);
+    });
+    const verdicts = each.map(result => result.verdict);
+    const verdict = verdicts.every(v => v === "일치") ? "일치"
+      : !verdicts.includes("불일치") ? "확인 필요"
+      : each.length > 1 && verdicts.includes("일치") ? "일부 일치"
+      : "불일치";
+    const missing = each.filter(result => result.verdict !== "일치").map(result => result.id);
+    return {verdict, checks, missing};
+  }
+
   // ---- 추천 실행 --------------------------------------------------------
-  async function recommend(selectedId, isChild, maxMinutes, type) {
+  async function recommend(ids, isChild, maxMinutes, type) {
     document.dispatchEvent(new CustomEvent("medinavi-search", {detail: "recommend"}));
     clearArea();
     area.hidden = false;
@@ -131,14 +178,15 @@
     }
     const controller = new AbortController();
     request = controller;
-    const selected = category(selectedId);
+    const selectedLabel = labelOf(ids);
+    const notes = ids.map(id => category(id).note).filter(Boolean).join(" ");
     areaStatus.textContent = "실시간 정보를 확인하고 있어요.";
     await window.medinaviRealtime?.refresh();
     if (controller.signal.aborted) return;
 
     const evaluated = data.items
       .filter(hospital => !type || hospital.dutyEmclsName === type)
-      .map(hospital => ({hospital, ...evaluate(hospital, selected, isChild)}));
+      .map(hospital => ({hospital, ...evaluate(hospital, ids, isChild)}));
     window.medinaviJudge.remember(evaluated);
     const excluded = evaluated.filter(entry => entry.verdict === "불일치").length;
 
@@ -150,6 +198,7 @@
       .sort((a, b) => a.route.duration_ms - b.route.duration_ms);
     const recommended = within.filter(entry => entry.verdict === "일치").slice(0, 5);
     const unknown = within.filter(entry => entry.verdict === "확인 필요");
+    const partial = within.filter(entry => entry.verdict === "일부 일치");
 
     recommended.forEach((entry, index) => {
       const {hospital, route, checks} = entry;
@@ -183,6 +232,21 @@
       item.textContent = hospital.dutyName + " · 약 " + Math.ceil(route.duration_ms / 60000) + "분 — " + reasons.join(", ");
       unknownList.append(item);
     }
+    // 두 분류 중 한쪽만 맞는 기관: 빠진 조건과 함께 따로 보여준다.
+    for (const {hospital, route, checks, missing} of partial) {
+      const item = document.createElement("li");
+      const choice = document.createElement("button");
+      choice.type = "button";
+      choice.dataset.hpid = hospital.hpid;
+      const lacking = checks.filter(check => check.kind !== "reference" && check.status !== "가능").map(window.medinaviJudge.checkText);
+      choice.textContent = hospital.dutyName + " · 약 " + Math.ceil(route.duration_ms / 60000) + "분 — " + labelOf(missing) + " 조건 빠짐: " + lacking.join(", ");
+      choice.onclick = () => showHospitalDetail(hospital, data, route);
+      item.append(choice);
+      partialList.append(item);
+    }
+    partialBox.hidden = partial.length === 0;
+    partialSummary.textContent = "일부 조건만 일치 (" + partial.length + "곳)";
+    partialBox.open = recommended.length === 0;
     unknownBox.hidden = unknown.length === 0;
     // 5곳이 넘으면 접어 두고 개수만 보여준다.
     unknownSummary.textContent = "조건 확인 필요 (" + unknown.length + "곳)";
@@ -190,16 +254,31 @@
     window.hospitalRouteView?.showSearchResults(recommended);
 
     const summary = [
-      selected.label,
-      "예상 " + maxMinutes + "분 이내 조건 일치 " + recommended.length + "곳" + (within.filter(e => e.verdict === "일치").length > 5 ? " (상위 5곳 표시)" : ""),
+      selectedLabel,
+      "예상 " + maxMinutes + "분 이내 " + (ids.length > 1 ? "모두 일치 " : "조건 일치 ") + recommended.length + "곳" + (within.filter(e => e.verdict === "일치").length > 5 ? " (상위 5곳 표시)" : ""),
+      partial.length && "일부 일치 " + partial.length + "곳",
       unknown.length && "조건 확인 필요 " + unknown.length + "곳",
       excluded && "조건 불일치 " + excluded + "곳 제외",
       noRoute && "이동시간 확인 불가 " + noRoute + "곳",
     ].filter(Boolean);
     // 결과가 없으면 어디서 줄었는지 단계별로 알려준다.
-    const funnel = "후보 " + evaluated.length + "곳 → 조건 일치 " + routed.filter(e => e.verdict === "일치").length + "곳 → " + maxMinutes + "분 이내 0곳";
+    const funnel = "후보 " + evaluated.length + "곳 → " + (ids.length > 1 ? "모두 일치 " : "조건 일치 ") + routed.filter(e => e.verdict === "일치").length + "곳 → " + maxMinutes + "분 이내 0곳";
+    // 두 분류로 찾았는데 모두 일치가 없으면, 한 분류만 적용해 다시 찾는 버튼을 보여준다.
+    if (!recommended.length && ids.length > 1 && lastCondition) {
+      for (const id of ids) {
+        const retry = document.createElement("button");
+        retry.type = "button";
+        retry.textContent = category(id).label + "만 적용해서 다시 찾기";
+        retry.onclick = () => {
+          lastCondition = {...lastCondition, category_id: id, secondary_category_id: null};
+          recommend([id], isChild, maxMinutes, type);
+        };
+        fallbackBox.append(retry);
+      }
+      fallbackBox.hidden = false;
+    }
     areaStatus.textContent = summary.join(" · ") + (recommended.length ? "" : ". [" + funnel + "] 조건을 넓히거나 확인 필요 목록의 병원에 연락해 주세요.");
-    notice.textContent = (selected.note ? selected.note + " " : "") + rules.notice + " 예상 시간은 일반 자동차 기준 참고값이에요.";
+    notice.textContent = (notes ? notes + " " : "") + rules.notice + " 예상 시간은 일반 자동차 기준 참고값이에요.";
     if (lastCondition) {
       refineCurrent.textContent = "현재 조건: " + conditionText(lastCondition);
       refineForm.hidden = false;
@@ -243,6 +322,7 @@
   });
 
   categorySelect.addEventListener("change", describeRequired);
+  categorySelect2.addEventListener("change", describeRequired);
   $("#symptom-edit").addEventListener("click", () => {
     dialog.close();
     input.focus();
@@ -254,8 +334,9 @@
       return;
     }
     dialog.close();
-    lastCondition = {query: pendingQuery, category_id: categorySelect.value, is_child: childBox.checked, max_minutes: maxMinutes, type: typeSelect.value};
-    recommend(categorySelect.value, childBox.checked, maxMinutes, typeSelect.value);
+    const ids = selectedIds();
+    lastCondition = {query: pendingQuery, category_id: ids[0], secondary_category_id: ids[1] || null, is_child: childBox.checked, max_minutes: maxMinutes, type: typeSelect.value};
+    recommend(ids, childBox.checked, maxMinutes, typeSelect.value);
   });
 
   // 조건 바꾸기: 직전 조건은 두고, 새로 입력한 내용에 나온 항목만 AI가 바꾼다. 결과는 확인창에서 다시 확인한다.
@@ -269,7 +350,7 @@
     const before = lastCondition;
     let parsed = null;
     try {
-      const previous = {query: before.query.slice(-300), category_id: before.category_id, is_child: before.is_child, max_minutes: before.max_minutes};
+      const previous = {query: before.query.slice(-300), category_id: before.category_id, secondary_category_id: before.secondary_category_id || null, is_child: before.is_child, max_minutes: before.max_minutes};
       const response = await fetch("/api/symptom/parse", {method: "POST", headers: {"Content-Type": "application/json"}, body: JSON.stringify({query: change, previous})});
       const body = await response.json().catch(() => null);
       if (!response.ok || !body) throw new Error(typeof body?.detail === "string" ? body.detail : "서버를 준비하고 있어요.");
