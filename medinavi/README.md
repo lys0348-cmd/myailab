@@ -71,7 +71,7 @@ python -m unittest discover -s tests -p "test_*.py"
 node tests/js/frontend.test.js
 ```
 
-**호출 제한**: 누구나 부를 수 있는 API는 IP별 1분 호출 수를 제한합니다 (길찾기 120, 주소 검색 20, 증상 분류 10, 실시간 30). 같은 출발지(약 10m)에서 같은 병원으로 가는 길찾기는 5분 동안 저장값을 다시 씁니다.
+**호출 제한**: 누구나 부를 수 있는 API는 IP별 1분 호출 수를 제한합니다 (길찾기 120, 주소 검색 20, 증상 분류 10, AI 결과 설명 10, 실시간 30). 같은 출발지(약 10m)에서 같은 병원으로 가는 길찾기는 5분 동안 저장값을 다시 씁니다.
 
 **정기 점검 (한 달에 한 번 권장)**
 1. `python tools/refresh_hospitals.py`로 병원 목록 변경 확인 → 필요하면 `--write`로 반영 → 새 기관이 있으면 `python tools/fetch_departments.py --write`

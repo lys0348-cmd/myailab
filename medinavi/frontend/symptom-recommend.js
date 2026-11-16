@@ -25,6 +25,14 @@
   const partialList = $("#recommend-partial-list");
   const partialSummary = $("#recommend-partial-summary");
   const fallbackBox = $("#recommend-fallback");
+  const explainArea = $("#explain-area");
+  const explainButton = $("#explain-button");
+  const explainBox = $("#explain-box");
+  const explainSummary = $("#explain-summary");
+  const explainReasons = $("#explain-reasons");
+  const explainStatus = $("#explain-status");
+  // AI 설명에 보낼 마지막 추천 결과 (판정과 근거만 담는다)
+  let explainPayload = null;
   const notice = $("#recommend-notice");
   const refineForm = $("#refine-form");
   const refineInput = $("#refine-query");
@@ -99,6 +107,12 @@
     partialBox.hidden = true;
     fallbackBox.replaceChildren();
     fallbackBox.hidden = true;
+    explainPayload = null;
+    explainArea.hidden = true;
+    explainBox.hidden = true;
+    explainSummary.textContent = "";
+    explainReasons.replaceChildren();
+    explainStatus.textContent = "";
     areaStatus.textContent = "";
     area.hidden = true;
     refineForm.hidden = true;
@@ -279,6 +293,29 @@
     }
     areaStatus.textContent = summary.join(" · ") + (recommended.length ? "" : ". [" + funnel + "] 조건을 넓히거나 확인 필요 목록의 병원에 연락해 주세요.");
     notice.textContent = (notes ? notes + " " : "") + rules.notice + " 예상 시간은 일반 자동차 기준 참고값이에요.";
+    // AI 결과 설명: 화면에 보인 판정·근거만 보내고, 버튼을 눌렀을 때만 만든다.
+    const clip = (text, length) => String(text || "").slice(0, length);
+    const checkText = window.medinaviJudge.checkText;
+    explainPayload = {
+      condition: clip([selectedLabel, isChild ? "소아" : "소아 아님", maxMinutes + "분 이내", type || "전체 유형"].join(" · "), 200),
+      hospitals: recommended.map((entry, index) => ({
+        rank: index + 1,
+        name: clip(entry.hospital.dutyName, 80),
+        type: clip(entry.hospital.dutyEmclsName, 40),
+        minutes: Math.ceil(entry.route.duration_ms / 60000),
+        conditions: entry.checks.filter(check => check.kind !== "reference").slice(0, 8).map(check => clip(checkText(check), 120)),
+        reference: entry.checks.filter(check => check.kind === "reference").slice(0, 4).map(check => clip(checkText(check), 120)),
+        realtime: clip(window.medinaviRealtime?.summary(entry.hospital.hpid), 160),
+        notice: clip(window.medinaviRealtime?.noticeText?.(entry.hospital.hpid), 200),
+      })),
+      partial_count: partial.length,
+      unknown_count: unknown.length,
+      excluded_count: excluded,
+      funnel: recommended.length ? "" : clip(funnel, 200),
+    };
+    explainArea.hidden = false;
+    explainButton.disabled = false;
+
     if (lastCondition) {
       refineCurrent.textContent = "현재 조건: " + conditionText(lastCondition);
       refineForm.hidden = false;
@@ -339,6 +376,35 @@
     const ids = selectedIds();
     lastCondition = {query: pendingQuery, category_id: ids[0], secondary_category_id: ids[1] || null, is_child: childBox.checked, max_minutes: maxMinutes, type: typeSelect.value};
     recommend(ids, childBox.checked, maxMinutes, typeSelect.value);
+  });
+
+  explainButton.addEventListener("click", async () => {
+    const payload = explainPayload;
+    if (!payload || explainButton.disabled) return;
+    explainButton.disabled = true;
+    explainStatus.textContent = "AI가 결과를 설명하고 있어요.";
+    try {
+      const response = await fetch("/api/explain", {method: "POST", headers: {"Content-Type": "application/json"}, body: JSON.stringify(payload)});
+      const body = await response.json().catch(() => null);
+      if (payload !== explainPayload) return;   // 그사이 새로 검색했으면 버린다
+      if (!response.ok || !body) throw new Error(typeof body?.detail === "string" ? body.detail : "AI 설명을 만들지 못했어요.");
+      explainSummary.textContent = body.summary || "";
+      explainReasons.replaceChildren();
+      const names = new Map(payload.hospitals.map(hospital => [hospital.rank, hospital.name]));
+      for (const reason of body.reasons || []) {
+        const item = document.createElement("li");
+        const strong = document.createElement("strong");
+        strong.textContent = reason.rank + "순위 " + (names.get(reason.rank) || "") + ": ";
+        item.append(strong, reason.text);
+        explainReasons.append(item);
+      }
+      explainBox.hidden = false;
+      explainStatus.textContent = "";
+    } catch (error) {
+      if (payload !== explainPayload) return;
+      explainStatus.textContent = (error.message || "AI 설명을 만들지 못했어요.") + " 아래 조건별 근거를 참고해 주세요.";
+      explainButton.disabled = false;
+    }
   });
 
   // 조건 바꾸기: 직전 조건은 두고, 새로 입력한 내용에 나온 항목만 AI가 바꾼다. 결과는 확인창에서 다시 확인한다.

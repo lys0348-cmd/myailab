@@ -23,6 +23,9 @@ button { min-width:48px; min-height:48px; padding:8px 16px; border:1px solid #50
 #realtime-detail .realtime-notices { padding-left:0 }
 #detail-checks { border-top:1px solid #d6e4e0; margin-top:12px; padding-top:8px }
 #detail-checks ul { margin:0; padding-left:20px }
+#explain-box { background:#f5f3ff; border-left:3px solid #7c6bd6; border-radius:6px; padding:6px 12px; margin:8px 0 }
+#explain-box .explain-label { font-size:0.85em; color:#5b4fa8; margin:0 0 4px }
+#explain-reasons { margin:0; padding-left:20px }
 #refine-form { background:#f3f8f6; border-radius:8px; padding:8px 12px; margin:8px 0 }
 #recommend-fallback button { margin:4px 8px 4px 0 }
 #recommend-partial-list button { text-align:left }
@@ -118,6 +121,15 @@ details.realtime-status summary { cursor:pointer }
         <h3>조건에 맞는 후보 응급의료기관 (이동시간순 1~5)</h3>
         <p class="rules-badge"></p>
         <p id="recommend-status" role="status"></p>
+        <div id="explain-area" hidden>
+            <button id="explain-button" type="button">AI로 결과 설명 보기</button>
+            <span id="explain-status" role="status"></span>
+            <div id="explain-box" hidden>
+                <p class="explain-label">AI 설명 · 아래 조건별 판정과 근거를 쉬운 말로 풀어 쓴 것이에요. 판정은 공공데이터 기준이고, 실제 수용 여부는 병원에 전화로 확인해 주세요.</p>
+                <p id="explain-summary"></p>
+                <ul id="explain-reasons"></ul>
+            </div>
+        </div>
         <form id="refine-form" hidden>
             <p id="refine-current"></p>
             <label for="refine-query">조건 바꾸기 (바뀐 내용만 입력하면 나머지 조건은 그대로 둬요)</label><br>
@@ -214,7 +226,7 @@ details.realtime-status summary { cursor:pointer }
 <!-- 추가: 실시간 병상·중증질환 수용 가능 정보 -->
 <script src="/static/realtime.js?v=6"></script>
 <!-- 추가: 증상 기반 추천 (임시 규칙표 · 자문 전) -->
-<script src="/static/symptom-recommend.js?v=6"></script>
+<script src="/static/symptom-recommend.js?v=7"></script>
 <!-- 웹 지도용 공개 Client ID만 사용한다. -->
 <script src="https://oapi.map.naver.com/openapi/v3/maps.js?ncpKeyId=qbtbo9ux4q" onload="showMap()" onerror="mapError()"></script>
 </html>
