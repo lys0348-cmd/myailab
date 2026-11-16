@@ -70,6 +70,7 @@ function createPage({symptom = null, realtimeFails = false, geocode = null} = {}
   const routeRequests = [];
   const geoRequests = [];
   const symptomRequests = [];
+  const explainRequests = [];
 
   function element(id) {
     return {
@@ -139,6 +140,12 @@ function createPage({symptom = null, realtimeFails = false, geocode = null} = {}
       const answer = typeof symptom === "function" ? symptom(sent) : symptom;
       return answer ? ok(answer) : {ok: false, status: 503, json: async () => ({detail: "자연어 검색이 아직 설정되지 않았어요."})};
     }
+    if (url === "/api/explain") {
+      const sent = JSON.parse(options.body);
+      explainRequests.push(sent);
+      return ok({summary: "조건을 충족한 " + sent.hospitals.length + "곳을 이동시간 순으로 보여줘요.",
+                 reasons: sent.hospitals.map(hospital => ({rank: hospital.rank, text: hospital.minutes + "분 거리예요."}))});
+    }
     if (url.startsWith("/api/geocode")) return ok({results: geocode || []});
     if (url.startsWith("/api/route")) {
       const params = new URLSearchParams(url.split("?")[1]);
@@ -158,7 +165,7 @@ function createPage({symptom = null, realtimeFails = false, geocode = null} = {}
   context.window = context;
   vm.createContext(context);
   for (const file of scripts) vm.runInContext(read(file), context, {filename: file});
-  return {els, context, markers, fits, routeRequests, geoRequests, symptomRequests, hospitals, realtime, badges, buttonsIn, naver,
+  return {els, context, markers, fits, routeRequests, geoRequests, symptomRequests, explainRequests, hospitals, realtime, badges, buttonsIn, naver,
     run: code => vm.runInContext(code, context)};
 }
 
@@ -330,6 +337,40 @@ test("조건 바꾸기: 직전 조건을 함께 보내고, 바뀐 항목을 알�
   els["symptom-query"].value = "다른 증상";
   await els["symptom-search"].listeners.submit[0]({preventDefault() {}});
   assert.strictEqual(String(els["rec-minutes"].value), "60", "문장에 시간이 없으면 기본 60분");
+});
+
+test("AI 결과 설명: 화면의 판정·근거만 보내고, 버튼을 눌렀을 때 순위별로 보여줌", async () => {
+  const page = createPage({symptom: {category_id: "cardiac", secondary_category_id: null, symptom_keywords: [], is_child: false, max_minutes: 300}});
+  await start(page);
+  const {els} = page;
+  assert.ok(els["explain-area"].hidden);
+  els["symptom-query"].value = "가슴 통증";
+  await els["symptom-search"].listeners.submit[0]({preventDefault() {}});
+  for (const listener of els["symptom-go"].listeners.click) await listener();
+  await tick();
+  assert.ok(!els["explain-area"].hidden && els["explain-box"].hidden);
+  assert.strictEqual(page.explainRequests.length, 0, "누르기 전에는 AI를 부르지 않아요");
+  await els["explain-button"].fire("click");
+  await tick();
+  const sent = page.explainRequests[0];
+  const results = page.buttonsIn("recommend-results");
+  assert.strictEqual(sent.condition, "흉통 · 심혈관 의심 · 소아 아님 · 300분 이내 · 전체 유형");
+  assert.deepStrictEqual(sent.hospitals.map(h => h.rank), results.map((_, index) => index + 1));
+  assert.match(sent.hospitals[0].conditions[0], /심근경색 일치/);
+  assert.match(sent.hospitals[0].notice, /⚠ 병원 공지: 심장내과 사정으로 CAG 불가능/);
+  assert.match(sent.hospitals[0].realtime, /응급실/);
+  assert.strictEqual(sent.funnel, "");
+  assert.ok(!els["explain-box"].hidden);
+  assert.match(els["explain-summary"].textContent, /조건을 충족한 \d+곳/);
+  const first = els["explain-reasons"].children[0];
+  assert.strictEqual(first.children[0].textContent, "1순위 " + sent.hospitals[0].name + ": ");
+  assert.ok(els["explain-button"].disabled, "같은 결과는 한 번만 설명해요");
+  // 새로 검색하면 설명을 지운다.
+  await els["symptom-search"].listeners.submit[0]({preventDefault() {}});
+  for (const listener of els["symptom-go"].listeners.click) await listener();
+  await tick();
+  assert.ok(els["explain-box"].hidden && !els["explain-button"].disabled);
+  assert.strictEqual(els["explain-reasons"].children.length, 0);
 });
 
 test("두 분류: 모두 일치가 없으면 일부 일치 묶음과 한 분류만 다시 찾기 버튼", async () => {
