@@ -294,7 +294,8 @@ test("증상 추천: AI 실패 시 직접 분류, 확인 필요가 많으면 접
 
 test("조건 바꾸기: 직전 조건을 함께 보내고, 바뀐 항목을 알려주고, 다시 찾기", async () => {
   const adult = {category_id: "cardiac", symptom_keywords: ["가슴 통증"], is_child: false, max_minutes: 300};
-  const page = createPage({symptom: sent => sent.previous ? {...adult, symptom_keywords: [], is_child: true} : adult});
+  const page = createPage({symptom: sent => sent.previous ? {...adult, symptom_keywords: [], is_child: true}
+    : sent.query === "다른 증상" ? {...adult, max_minutes: null} : adult});
   await start(page);
   const {els} = page;
   assert.ok(els["refine-form"].hidden, "검색 전에는 조건 바꾸기를 숨겨요");
@@ -322,6 +323,13 @@ test("조건 바꾸기: 직전 조건을 함께 보내고, 바뀐 항목을 알�
   els["refine-query"].value = "30분 안으로";
   await els["refine-form"].listeners.submit[0]({preventDefault() {}});
   assert.strictEqual(page.symptomRequests.at(-1).previous.query, "가슴 통증 / 7살 아이예요");
+  els["symptom-confirm"].close();
+
+  // 새 증상 검색은 직전 이동시간(300분)을 이어받지 않는다.
+  els["rec-minutes"].value = "20";
+  els["symptom-query"].value = "다른 증상";
+  await els["symptom-search"].listeners.submit[0]({preventDefault() {}});
+  assert.strictEqual(String(els["rec-minutes"].value), "60", "문장에 시간이 없으면 기본 60분");
 });
 
 test("두 분류: 모두 일치가 없으면 일부 일치 묶음과 한 분류만 다시 찾기 버튼", async () => {
