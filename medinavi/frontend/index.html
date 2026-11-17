@@ -28,7 +28,7 @@ button { min-width:48px; min-height:48px; padding:8px 16px; border:1px solid #50
 #explain-reasons { margin:0; padding-left:20px }
 #refine-form { background:#f3f8f6; border-radius:8px; padding:8px 12px; margin:8px 0 }
 #recommend-fallback button { margin:4px 8px 4px 0 }
-#recommend-partial-list button { text-align:left }
+#recommend-partial-list button, #recommend-capacity-list button { text-align:left }
 #refine-query { width:100%; max-width:420px; box-sizing:border-box }
 .realtime-status { margin:4px 0; overflow-wrap:anywhere }
 .realtime-status[data-status="가능"] strong { color:#147d52 }
@@ -118,7 +118,7 @@ details.realtime-status summary { cursor:pointer }
         <button id="symptom-go" type="button">이 조건으로 찾기</button>
     </dialog>
     <div id="recommend-area" hidden>
-        <h3>조건에 맞는 후보 응급의료기관 (이동시간순 1~5)</h3>
+        <h3>환자 상태에 맞게 수용 가능한 응급의료기관 (이동시간순 1~5)</h3>
         <p class="rules-badge"></p>
         <p id="recommend-status" role="status"></p>
         <div id="explain-area" hidden>
@@ -139,6 +139,11 @@ details.realtime-status summary { cursor:pointer }
         </form>
         <ol id="recommend-results"></ol>
         <p id="recommend-fallback" hidden></p>
+        <details id="recommend-capacity" hidden>
+            <summary id="recommend-capacity-summary">지금 수용 어려움</summary>
+            <p>진료 역량은 있지만 지금 응급실 병상·수술실·장비가 비어 있지 않은 기관이에요. 상황이 바뀔 수 있으니 필요하면 전화로 확인해 주세요.</p>
+            <ul id="recommend-capacity-list"></ul>
+        </details>
         <details id="recommend-partial" hidden>
             <summary id="recommend-partial-summary">일부 조건만 일치</summary>
             <p>두 분류 중 한쪽 조건만 맞는 기관이에요. 빠진 조건은 병원에 직접 확인해 주세요.</p>
@@ -226,7 +231,7 @@ details.realtime-status summary { cursor:pointer }
 <!-- 추가: 실시간 병상·중증질환 수용 가능 정보 -->
 <script src="/static/realtime.js?v=7"></script>
 <!-- 추가: 증상 기반 추천 (임시 규칙표 · 자문 전) -->
-<script src="/static/symptom-recommend.js?v=7"></script>
+<script src="/static/symptom-recommend.js?v=8"></script>
 <!-- 웹 지도용 공개 Client ID만 사용한다. -->
 <script src="https://oapi.map.naver.com/openapi/v3/maps.js?ncpKeyId=qbtbo9ux4q" onload="showMap()" onerror="mapError()"></script>
 </html>

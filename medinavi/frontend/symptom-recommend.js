@@ -24,6 +24,9 @@
   const partialBox = $("#recommend-partial");
   const partialList = $("#recommend-partial-list");
   const partialSummary = $("#recommend-partial-summary");
+  const capacityBox = $("#recommend-capacity");
+  const capacityList = $("#recommend-capacity-list");
+  const capacitySummary = $("#recommend-capacity-summary");
   const fallbackBox = $("#recommend-fallback");
   const explainArea = $("#explain-area");
   const explainButton = $("#explain-button");
@@ -88,9 +91,10 @@
 
   function describeRequired() {
     const ids = selectedIds();
-    requiredText.textContent = ids.length === 1
+    const common = (rules.common_required || []).map(item => item.name);
+    requiredText.textContent = (common.length ? "공통 수용 조건: " + common.join(", ") + " 가용 | " : "") + (ids.length === 1
       ? requiredTextOf(category(ids[0]))
-      : ids.map(id => category(id).label + " — " + requiredTextOf(category(id))).join(" | ") + " (두 분류 조건을 모두 확인해요)";
+      : ids.map(id => category(id).label + " — " + requiredTextOf(category(id))).join(" | ") + " (두 분류 조건을 모두 확인해요)");
   }
 
   function labelOf(ids) {
@@ -105,6 +109,8 @@
     unknownBox.hidden = true;
     partialList.replaceChildren();
     partialBox.hidden = true;
+    capacityList.replaceChildren();
+    capacityBox.hidden = true;
     fallbackBox.replaceChildren();
     fallbackBox.hidden = true;
     explainPayload = null;
@@ -153,7 +159,8 @@
   // ---- 역량 판정 (공통 판정 judgement.js 사용) ----------------------------
   function evaluateOne(hospital, selected, isChild) {
     // 소아일 때 규칙표의 child_required를 필수 조건에 더한다 (자문 후 채울 자리).
-    const required = [...(selected.required || []), ...(isChild ? rules.child_required || [] : [])];
+    // 모든 환자 공통 수용 조건(응급실 병상 등) + 분류별 수용 조건(중증질환·병상·수술실·장비) + 소아 조건
+    const required = [...(rules.common_required || []), ...(selected.required || []), ...(isChild ? rules.child_required || [] : [])];
     const any = selected.required_any || [];
     // 소아 공통 참고 항목이 분류의 필수·참고 항목과 겹치면 한 번만 보여준다.
     const same = (a, b) => a.type === b.type && a.name === b.name;
@@ -176,7 +183,16 @@
       : each.length > 1 && verdicts.includes("일치") ? "일부 일치"
       : "불일치";
     const missing = each.filter(result => result.verdict !== "일치").map(result => result.id);
-    return {verdict, checks, missing};
+    // 진료 역량은 맞는데 지금 병상·장비가 없어서 불일치인 기관은 '지금 수용 어려움'으로 따로 보여준다.
+    // 조건: 빠진 것이 병상·장비뿐이고, 중증질환·진료과 같은 진료 역량은 '가능'으로 확인돼야 한다.
+    const isCapacity = check => check.type === "bed" || check.type === "equipment";
+    const failing = checks.filter(check => check.kind !== "reference" && check.status === "불가");
+    const abilityRequired = checks.filter(check => check.kind === "required" && !isCapacity(check));
+    const abilityAny = checks.filter(check => check.kind === "any");
+    const abilityConfirmed = abilityRequired.every(check => check.status === "가능")
+      && (!abilityAny.length || abilityAny.some(check => check.status === "가능"));
+    const capacity = verdict === "불일치" && failing.length > 0 && failing.every(isCapacity) && abilityConfirmed;
+    return {verdict, checks, missing, capacity};
   }
 
   // ---- 추천 실행 --------------------------------------------------------
@@ -202,10 +218,10 @@
       .filter(hospital => !type || hospital.dutyEmclsName === type)
       .map(hospital => ({hospital, ...evaluate(hospital, ids, isChild)}));
     window.medinaviJudge.remember(evaluated);
-    const excluded = evaluated.filter(entry => entry.verdict === "불일치").length;
+    const excluded = evaluated.filter(entry => entry.verdict === "불일치" && !entry.capacity).length;
 
     areaStatus.textContent = "병원별 예상 이동시간을 조회하고 있어요.";
-    const routed = await window.medinaviJudge.lookupRoutes(evaluated.filter(entry => entry.verdict !== "불일치"), origin, controller.signal);
+    const routed = await window.medinaviJudge.lookupRoutes(evaluated.filter(entry => entry.verdict !== "불일치" || entry.capacity), origin, controller.signal);
     if (!routed) return;
     const noRoute = routed.filter(entry => !entry.route).length;
     const within = routed.filter(entry => entry.route && entry.route.duration_ms <= maxMinutes * 60000)
@@ -213,6 +229,7 @@
     const recommended = within.filter(entry => entry.verdict === "일치").slice(0, 5);
     const unknown = within.filter(entry => entry.verdict === "확인 필요");
     const partial = within.filter(entry => entry.verdict === "일부 일치");
+    const busy = within.filter(entry => entry.capacity);
 
     recommended.forEach((entry, index) => {
       const {hospital, route, checks} = entry;
@@ -258,6 +275,21 @@
       item.append(choice);
       partialList.append(item);
     }
+    // 지금 병상·수술실·장비가 없어 수용이 어려운 기관 (가까운 순)
+    for (const {hospital, route, checks} of busy) {
+      const item = document.createElement("li");
+      const choice = document.createElement("button");
+      choice.type = "button";
+      choice.dataset.hpid = hospital.hpid;
+      const lacking = checks.filter(check => check.kind !== "reference" && check.status === "불가").map(window.medinaviJudge.checkText);
+      choice.textContent = hospital.dutyName + " · 약 " + Math.ceil(route.duration_ms / 60000) + "분 — " + lacking.join(", ");
+      choice.onclick = () => showHospitalDetail(hospital, data, route);
+      item.append(choice);
+      capacityList.append(item);
+    }
+    capacityBox.hidden = busy.length === 0;
+    capacitySummary.textContent = "지금 수용 어려움 (" + busy.length + "곳 · 병상·수술실·장비 없음)";
+    capacityBox.open = recommended.length === 0;
     partialBox.hidden = partial.length === 0;
     partialSummary.textContent = "일부 조건만 일치 (" + partial.length + "곳)";
     partialBox.open = recommended.length === 0;
@@ -271,6 +303,7 @@
       selectedLabel,
       "예상 " + maxMinutes + "분 이내 " + (ids.length > 1 ? "모두 일치 " : "조건 일치 ") + recommended.length + "곳" + (within.filter(e => e.verdict === "일치").length > 5 ? " (상위 5곳 표시)" : ""),
       partial.length && "일부 일치 " + partial.length + "곳",
+      busy.length && "지금 수용 어려움 " + busy.length + "곳",
       unknown.length && "조건 확인 필요 " + unknown.length + "곳",
       excluded && "조건 불일치 " + excluded + "곳 제외",
       noRoute && "이동시간 확인 불가 " + noRoute + "곳",
