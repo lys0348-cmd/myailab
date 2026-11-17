@@ -103,6 +103,11 @@
     return (data?.notices?.[hpid] || []).filter(notice => !notice.end || new Date(notice.end).getTime() >= now);
   }
 
+  // 공지가 어느 진료·질환에 대한 것인지 (소아과 공지가 응급실 전체 공지처럼 읽히지 않게)
+  function subject(notice) {
+    return notice.department || (notice.kind === "중증질환" ? notice.illness || notice.topic : "응급실");
+  }
+
   function shorten(text, length = 40) {
     return text.length > length ? text.slice(0, length - 1) + "…" : text;
   }
@@ -111,7 +116,7 @@
   function noticeText(hpid) {
     const list = notices(hpid);
     if (!list.length) return "";
-    return "⚠ 병원 공지: " + shorten(list[0].text) + (list.length > 1 ? " 외 " + (list.length - 1) + "건" : "");
+    return "⚠ 병원 공지: [" + subject(list[0]) + "] " + shorten(list[0].text) + (list.length > 1 ? " 외 " + (list.length - 1) + "건" : "");
   }
 
   function untilText(iso) {
@@ -201,7 +206,7 @@
       list.className = "realtime-notices";
       for (const notice of hospitalNotices) {
         const item = document.createElement("li");
-        const about = notice.department || (notice.kind === "중증질환" ? notice.illness || notice.topic : "응급실");
+        const about = subject(notice);
         const strong = document.createElement("strong");
         strong.textContent = "[" + about + "] ";
         item.append(strong, notice.text + (notice.end ? " · " + untilText(notice.end) : ""));

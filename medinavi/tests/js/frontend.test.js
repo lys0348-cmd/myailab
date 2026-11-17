@@ -232,7 +232,7 @@ test("병원 공지: 목록에 한 줄, 관련 조건 근거에 덧붙임, 끝�
   assert.ok(results.length > 0);
   for (const text of results) {
     assert.match(text, /심근경색 일치\(가능 · 병원 입력 · ⚠ 공지: 심장내과 사정으로 CAG 불가능\)/);
-    assert.match(text, /\n⚠ 병원 공지: 심장내과 사정으로 CAG 불가능$/, "끝난 공지는 세지 않아야 해요");
+    assert.match(text, /\n⚠ 병원 공지: \[\[재관류중재술\] 심근경색\] 심장내과 사정으로 CAG 불가능$/, "끝난 공지는 세지 않아야 해요");
   }
   const hospital = page.hospitals.items[0];
   page.run(`window.medinaviRealtime.renderDetail(${JSON.stringify(hospital)})`);
@@ -357,7 +357,7 @@ test("AI 결과 설명: 화면의 판정·근거만 보내고, 버튼을 눌렀�
   assert.strictEqual(sent.condition, "흉통 · 심혈관 의심 · 소아 아님 · 300분 이내 · 전체 유형");
   assert.deepStrictEqual(sent.hospitals.map(h => h.rank), results.map((_, index) => index + 1));
   assert.match(sent.hospitals[0].conditions[0], /심근경색 일치/);
-  assert.match(sent.hospitals[0].notice, /⚠ 병원 공지: 심장내과 사정으로 CAG 불가능/);
+  assert.match(sent.hospitals[0].notice, /⚠ 병원 공지: \[\[재관류중재술\] 심근경색\] 심장내과 사정으로 CAG 불가능/);
   assert.match(sent.hospitals[0].realtime, /응급실/);
   assert.strictEqual(sent.funnel, "");
   assert.ok(!els["explain-box"].hidden);
