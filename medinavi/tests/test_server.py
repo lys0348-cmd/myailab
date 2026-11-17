@@ -67,7 +67,7 @@ class HospitalsAndRules(unittest.TestCase):
         self.assertEqual(len(ids), len(set(ids)))
         self.assertIn("unclear", ids)
         items = [item for category in rules["categories"] for key in ("required", "required_any", "reference") for item in category.get(key, [])]
-        items += rules.get("child_required", []) + rules.get("child_reference", [])
+        items += rules.get("child_required", []) + rules.get("child_reference", []) + rules.get("common_required", [])
         wrong = [item for item in items if item["name"] not in names[item["type"]]]
         self.assertEqual(wrong, [], "규칙표 이름이 실제 데이터 이름과 달라요")
         self.assertIn("pre_ktas", rules)

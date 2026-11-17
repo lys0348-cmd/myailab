@@ -270,8 +270,20 @@ test("증상 추천: 흉통 → 확인창 → 심근경색 일치 병원만 1~5�
   assert.ok(results.length > 0 && results.length <= 5);
   const statusOf = hpid => page.realtime.hospitals[hpid]?.illness?.[0]?.status;
   assert.ok(results.every(button => statusOf(button.dataset.hpid) === "가능"));
-  assert.match(results[0].textContent, /조건: \[재관류중재술\] 심근경색 일치/);
+  assert.match(results[0].textContent, /조건: 응급실 일반 일치\(가용 \d+\) · \[재관류중재술\] 심근경색 일치\(가능 · 병원 입력[^)]*\) · 혈관촬영기 일치/);
+  // 수용 조건: 응급실 병상이 있고 혈관촬영기가 가능한 병원만 1~5순위
+  const bedOf = hpid => page.realtime.hospitals[hpid].beds[0].available;
+  const angioOf = hpid => page.realtime.hospitals[hpid].equipment[1].status;
+  assert.ok(results.every(button => bedOf(button.dataset.hpid) > 0 && angioOf(button.dataset.hpid) === "가능"));
   assert.match(els["recommend-status"].textContent, /조건 불일치 \d+곳 제외/);
+  // 심근경색은 가능하지만 지금 응급실 포화·혈관촬영기 불가인 병원은 '지금 수용 어려움'으로 따로
+  const busy = page.buttonsIn("recommend-capacity-list");
+  assert.ok(busy.length > 0 && !els["recommend-capacity"].hidden);
+  assert.ok(busy.every(button => statusOf(button.dataset.hpid) === "가능"), "진료 역량이 없는 병원은 넣지 않아요");
+  assert.ok(busy.some(button => /응급실 일반 불일치\(가용 0 · 포화\)/.test(button.textContent)), busy.map(b => b.textContent).join("\n"));
+  assert.match(els["recommend-capacity-summary"].textContent, /지금 수용 어려움 \(\d+곳/);
+  assert.match(els["recommend-status"].textContent, /지금 수용 어려움 \d+곳/);
+  assert.match(els["confirm-required"].textContent, /^공통 수용 조건: 응급실 일반 가용 \| 모두 가능해야 일치: \[재관류중재술\] 심근경색, 혈관촬영기/);
   // 1순위를 누르면 상세가 열리고 목록에서도 강조된다.
   await results[0].fire("click");
   assert.strictEqual(els["hospital-detail"].hidden, false);
@@ -356,7 +368,7 @@ test("AI 결과 설명: 화면의 판정·근거만 보내고, 버튼을 눌렀�
   const results = page.buttonsIn("recommend-results");
   assert.strictEqual(sent.condition, "흉통 · 심혈관 의심 · 소아 아님 · 300분 이내 · 전체 유형");
   assert.deepStrictEqual(sent.hospitals.map(h => h.rank), results.map((_, index) => index + 1));
-  assert.match(sent.hospitals[0].conditions[0], /심근경색 일치/);
+  assert.ok(sent.hospitals[0].conditions.some(text => /심근경색 일치/.test(text)), sent.hospitals[0].conditions.join(" / "));
   assert.match(sent.hospitals[0].notice, /⚠ 병원 공지: \[\[재관류중재술\] 심근경색\] 심장내과 사정으로 CAG 불가능/);
   assert.match(sent.hospitals[0].realtime, /응급실/);
   assert.strictEqual(sent.funnel, "");
