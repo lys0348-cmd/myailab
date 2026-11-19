@@ -62,7 +62,7 @@ function realtimeResponse(items, {minutesAgo = 4} = {}) {
   return {retrieved_at: updated, source: "시험", errors: [], hospitals, notices};
 }
 
-function createPage({symptom = null, realtimeFails = false, geocode = null} = {}) {
+function createPage({symptom = null, realtimeFails = false, geocode = null, search = "", storage = new Map()} = {}) {
   const els = {};
   const docListeners = {};
   const markers = [];
@@ -71,6 +71,7 @@ function createPage({symptom = null, realtimeFails = false, geocode = null} = {}
   const geoRequests = [];
   const symptomRequests = [];
   const explainRequests = [];
+  const urlChanges = [];
 
   function element(id) {
     return {
@@ -161,11 +162,15 @@ function createPage({symptom = null, realtimeFails = false, geocode = null} = {}
     Option: function (text, value) { this.text = text; this.value = value; }, MutationObserver: class { observe() {} disconnect() {} },
     navigator: {geolocation: {getCurrentPosition(success, failure) { geoRequests.push({success, failure}); }}},
     isSecureContext: true, setTimeout, clearTimeout, setInterval: () => 0, Date, Math, JSON, Promise,
+    // 전화 시험 모드용: 주소(?call_test=…), 탭 저장소, 주소 정리
+    location: {search, pathname: "/", hash: ""},
+    history: {replaceState(state, title, url) { urlChanges.push(url); }},
+    sessionStorage: {getItem: key => storage.has(key) ? storage.get(key) : null, setItem: (key, value) => storage.set(key, String(value)), removeItem: key => storage.delete(key)},
   };
   context.window = context;
   vm.createContext(context);
   for (const file of scripts) vm.runInContext(read(file), context, {filename: file});
-  return {els, context, markers, fits, routeRequests, geoRequests, symptomRequests, explainRequests, hospitals, realtime, badges, buttonsIn, naver,
+  return {els, context, markers, fits, routeRequests, geoRequests, symptomRequests, explainRequests, hospitals, realtime, badges, buttonsIn, naver, urlChanges, storage,
     run: code => vm.runInContext(code, context)};
 }
 
@@ -461,6 +466,81 @@ test("실시간 정보를 못 불러와도 조건 검색은 동작하고 중증�
   await els["hospital-search"].fire("submit");
   assert.strictEqual(lines(page).length, 0);
   assert.ok(els["search-ill-unknown-list"].children.every(item => item.textContent.includes("실시간 정보를 불러오지 못함")));
+});
+
+
+// 목록 한 줄(li)에 붙은 전화 버튼
+const callsIn = (page, id) => page.els[id].children.map(item => item.children.find(child => child.className === "call-link"));
+
+test("전화 버튼: 결과·확인 필요·상세에 응급실 번호로 바로 전화", async () => {
+  const page = createPage(); await start(page);
+  const {els, hospitals} = page;
+  assert.ok(els["call-test-banner"].hidden, "시험 모드가 아니면 알림을 숨겨요");
+  els["hospital-type"].value = "지역응급의료기관"; els.illness.value = "[재관류중재술] 심근경색"; els["max-minutes"].value = "300";
+  await els["hospital-search"].fire("submit");
+  const results = page.buttonsIn("search-results");
+  const calls = callsIn(page, "search-results");
+  assert.ok(results.length > 0 && calls.length === results.length);
+  calls.forEach((call, index) => {
+    const hospital = hospitals.items.find(item => item.hpid === results[index].dataset.hpid);
+    assert.ok(call, hospital.dutyName + "에 전화 버튼이 없어요");
+    assert.strictEqual(call.href, "tel:" + hospital.dutyTel3.replace(/[^0-9]/g, ""));
+    assert.strictEqual(call.textContent, "📞 전화 응급실 " + hospital.dutyTel3);
+    assert.match(call.attrs["aria-label"], new RegExp(hospital.dutyName + " 응급실에 전화 걸기"));
+  });
+  assert.ok(callsIn(page, "search-ill-unknown-list").every(Boolean), "확인 필요 기관에도 전화 버튼");
+  // 상세: 응급실 연락처 칸에 전화 버튼, 번호 글자는 그대로
+  const hospital = hospitals.items[0];
+  page.run(`showHospitalDetail(${JSON.stringify(hospital)}, window.medinaviData)`);
+  const fields = els["detail-fields"].children;
+  const phoneField = fields[fields.findIndex(field => field.textContent === "응급실 연락처") + 1];
+  assert.match(phoneField.textContent, new RegExp("^" + hospital.dutyTel3));
+  assert.strictEqual(phoneField.children[0].href, "tel:" + hospital.dutyTel3.replace(/[^0-9]/g, ""));
+  // 응급실 번호가 없으면 대표번호, 둘 다 없으면 버튼 없음
+  assert.strictEqual(page.run(`window.medinaviCall.link({dutyName: "가", dutyTel1: "033-111-2222"}).textContent`), "📞 전화 대표번호 033-111-2222");
+  assert.strictEqual(page.run(`window.medinaviCall.link({dutyName: "가"})`), null);
+});
+
+test("전화 시험 모드: ?call_test=내 번호면 모든 전화 버튼이 그 번호로, 주소에서 번호 지우기, 끄기", async () => {
+  const storage = new Map();
+  const page = createPage({search: "?call_test=010-1234-5678&r=3", storage,
+    symptom: {category_id: "cardiac", secondary_category_id: null, symptom_keywords: [], is_child: false, max_minutes: 300}});
+  await start(page);
+  const {els, hospitals} = page;
+  assert.ok(!els["call-test-banner"].hidden);
+  assert.match(els["call-test-banner"].textContent, /병원 대신 010-1234-5678\(으\)로 걸려요/);
+  assert.deepStrictEqual(page.urlChanges, ["/?r=3"], "번호는 주소창에서 지워요");
+  assert.strictEqual(storage.get("medinavi-call-test"), "01012345678");
+  // 증상 추천 결과·지금 수용 어려움도 모두 내 번호로
+  els["symptom-query"].value = "가슴 통증";
+  await els["symptom-search"].listeners.submit[0]({preventDefault() {}});
+  for (const listener of els["symptom-go"].listeners.click) await listener();
+  await tick();
+  const calls = [...callsIn(page, "recommend-results"), ...callsIn(page, "recommend-capacity-list")];
+  assert.ok(calls.length > 1 && calls.every(call => call.href === "tel:01012345678" && call.dataset.test === "true"));
+  assert.strictEqual(calls[0].textContent, "📞 전화 (시험: 010-1234-5678)");
+  // 끄기: 알림이 사라지고 이미 그려진 버튼도 병원 번호로 돌아간다.
+  await els["call-test-banner"].children[0].fire("click");
+  assert.ok(els["call-test-banner"].hidden);
+  assert.ok(!storage.has("medinavi-call-test"));
+  const first = hospitals.items.find(item => item.hpid === page.buttonsIn("recommend-results")[0].dataset.hpid);
+  assert.strictEqual(calls[0].href, "tel:" + first.dutyTel3.replace(/[^0-9]/g, ""));
+
+  // 같은 탭에서 새로고침하면(주소에 번호 없음) 저장된 시험 모드가 이어진다.
+  storage.set("medinavi-call-test", "01099998888");
+  const again = createPage({storage}); await start(again);
+  assert.match(again.els["call-test-banner"].textContent, /010-9999-8888/);
+  assert.strictEqual(again.run(`window.medinaviCall.link(${JSON.stringify(hospitals.items[0])}).href`), "tel:01099998888");
+
+  // 휴대폰 번호가 아니면(유료 060 등) 켜지 않고 알려준다.
+  const bad = createPage({search: "?call_test=0601234567", storage: new Map()}); await start(bad);
+  assert.match(bad.els["call-test-banner"].textContent, /켜지 못했어요/);
+  assert.strictEqual(bad.run(`window.medinaviCall.testNumber()`), "");
+  assert.strictEqual(bad.run(`window.medinaviCall.link(${JSON.stringify(hospitals.items[0])}).href`), "tel:" + hospitals.items[0].dutyTel3.replace(/[^0-9]/g, ""));
+  // ?call_test=off 로 끈다.
+  const offStorage = new Map([["medinavi-call-test", "01012345678"]]);
+  const off = createPage({search: "?call_test=off", storage: offStorage}); await start(off);
+  assert.ok(off.els["call-test-banner"].hidden && !offStorage.has("medinavi-call-test"));
 });
 
 // ---------------------------------------------------------------------------
