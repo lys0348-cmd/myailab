@@ -120,6 +120,11 @@ function showHospitalDetail(hospital, data, savedRoute = null) {
     const description = document.createElement("dd");
     name.textContent = label;
     description.textContent = String(value ?? "").trim() || "확인 필요";
+    // 추가: 응급실 연락처에는 누르면 바로 전화가 걸리는 버튼을 붙인다 (call.js).
+    if (label === "응급실 연락처") {
+      const call = window.medinaviCall?.link(hospital);
+      if (call) description.append(" ", call);
+    }
     fields.append(name, description);
   }
   // 추가: 실시간 병상·중증질환 수용 가능 정보 (realtime.js)
@@ -459,6 +464,8 @@ function setupHospitalSearch(data){
       if (congestion) button.dataset.congestion = congestion;
       button.onclick = () => showHospitalDetail(hospital, data, route);
       item.append(button);
+      // 추가: 결과마다 바로 전화 버튼 (call.js)
+      window.medinaviCall?.attach(item, hospital);
       results.append(item);
     });
     // 결과를 지도에 1~5번 핀으로 표시한다. 결과가 없으면 기존 지도를 유지한다.
@@ -468,6 +475,8 @@ function setupHospitalSearch(data){
       const item = document.createElement("li");
       const reasons = checks.filter(check => check.status !== "가능");
       item.textContent = hospital.dutyName + " · 약 " + Math.ceil(route.duration_ms / 60000) + "분 — " + reasons.map(judge.checkText).join(", ");
+      // 추가: 확인 필요 기관은 병원에 직접 확인해야 하므로 전화 버튼을 붙인다.
+      window.medinaviCall?.attach(item, hospital);
       (reasons.some(check => check.type === "department") ? deptUnknownList : illUnknownList).append(item);
     }
     deptUnknownSection.hidden = deptUnknownList.children.length === 0;

@@ -255,12 +255,15 @@
       if (congestion) choice.dataset.congestion = congestion;
       choice.onclick = () => showHospitalDetail(hospital, data, route);
       item.append(choice);
+      // 추가: 결과마다 바로 전화 버튼 (call.js)
+      window.medinaviCall?.attach(item, hospital);
       results.append(item);
     });
     for (const {hospital, route, checks} of unknown) {
       const item = document.createElement("li");
       const reasons = checks.filter(check => check.kind !== "reference" && check.status !== "가능").map(window.medinaviJudge.checkText);
       item.textContent = hospital.dutyName + " · 약 " + Math.ceil(route.duration_ms / 60000) + "분 — " + reasons.join(", ");
+      window.medinaviCall?.attach(item, hospital);
       unknownList.append(item);
     }
     // 두 분류 중 한쪽만 맞는 기관: 빠진 조건과 함께 따로 보여준다.
@@ -273,6 +276,7 @@
       choice.textContent = hospital.dutyName + " · 약 " + Math.ceil(route.duration_ms / 60000) + "분 — " + labelOf(missing) + " 조건 빠짐: " + lacking.join(", ");
       choice.onclick = () => showHospitalDetail(hospital, data, route);
       item.append(choice);
+      window.medinaviCall?.attach(item, hospital);
       partialList.append(item);
     }
     // 지금 병상·수술실·장비가 없어 수용이 어려운 기관 (가까운 순)
@@ -285,6 +289,7 @@
       choice.textContent = hospital.dutyName + " · 약 " + Math.ceil(route.duration_ms / 60000) + "분 — " + lacking.join(", ");
       choice.onclick = () => showHospitalDetail(hospital, data, route);
       item.append(choice);
+      window.medinaviCall?.attach(item, hospital);
       capacityList.append(item);
     }
     capacityBox.hidden = busy.length === 0;
