@@ -62,7 +62,7 @@ function realtimeResponse(items, {minutesAgo = 4} = {}) {
   return {retrieved_at: updated, source: "시험", errors: [], hospitals, notices};
 }
 
-function createPage({symptom = null, realtimeFails = false, geocode = null, search = "", storage = new Map()} = {}) {
+function createPage({symptom = null, realtimeFails = false, geocode = null, search = "", storage = new Map(), tweak = null} = {}) {
   const els = {};
   const docListeners = {};
   const markers = [];
@@ -130,6 +130,7 @@ function createPage({symptom = null, realtimeFails = false, geocode = null, sear
 
   const hospitals = hospitalsResponse();
   const realtime = realtimeResponse(hospitals.items);
+  if (tweak) tweak(hospitals, realtime);       // 시험별로 병원·실시간 자료를 바꿀 때
   const ok = body => ({ok: true, status: 200, json: async () => JSON.parse(JSON.stringify(body))});
   async function fetch(url, options) {
     if (url === "/api/hospitals") return ok(hospitals);
@@ -268,14 +269,17 @@ test("증상 추천: 흉통 → 확인창 → 심근경색 일치 병원만 1~5�
   await els["symptom-search"].listeners.submit[0]({preventDefault() {}});
   assert.ok(els["symptom-confirm"].open);
   assert.strictEqual(els["confirm-category"].value, "cardiac");
-  assert.match(page.badges[0].textContent, /임시 분류표 · 자문 전 · Pre-KTAS/);
+  assert.match(page.badges[0].textContent, /^표준지침\(2023\) 기준 · 강원 지침 확인 전$/);
+  // 흉통은 'ST분절 상승' 확인 항목이 있고, 체크하면 재관류 조건을 적용한다 (표준지침 p.228).
+  assert.match(els["confirm-required"].textContent, /지침: 심인성 흉통 의심 → 지역응급의료센터 이상/);
+  await checkFlag(page, "stemi");
   for (const listener of els["symptom-go"].listeners.click) await listener();
   await tick();
   const results = page.buttonsIn("recommend-results");
   assert.ok(results.length > 0 && results.length <= 5);
   const statusOf = hpid => page.realtime.hospitals[hpid]?.illness?.[0]?.status;
   assert.ok(results.every(button => statusOf(button.dataset.hpid) === "가능"));
-  assert.match(results[0].textContent, /조건: 응급실 일반 일치\(가용 \d+\) · \[재관류중재술\] 심근경색 일치\(가능 · 병원 입력[^)]*\) · 혈관촬영기 일치/);
+  assert.match(results[0].textContent, /조건: 지역응급의료기관 이상 일치\([^)]+\) · 응급실 일반 일치\(가용 \d+\) · \[재관류중재술\] 심근경색 일치\(가능 · 병원 입력[^)]*\) · 혈관촬영기 일치/);
   // 수용 조건: 응급실 병상이 있고 혈관촬영기가 가능한 병원만 1~5순위
   const bedOf = hpid => page.realtime.hospitals[hpid].beds[0].available;
   const angioOf = hpid => page.realtime.hospitals[hpid].equipment[1].status;
@@ -288,7 +292,8 @@ test("증상 추천: 흉통 → 확인창 → 심근경색 일치 병원만 1~5�
   assert.ok(busy.some(button => /응급실 일반 불일치\(가용 0 · 포화\)/.test(button.textContent)), busy.map(b => b.textContent).join("\n"));
   assert.match(els["recommend-capacity-summary"].textContent, /지금 수용 어려움 \(\d+곳/);
   assert.match(els["recommend-status"].textContent, /지금 수용 어려움 \d+곳/);
-  assert.match(els["confirm-required"].textContent, /^공통 수용 조건: 응급실 일반 가용 \| 모두 가능해야 일치: \[재관류중재술\] 심근경색, 혈관촬영기/);
+  assert.match(els["confirm-required"].textContent, /^Pre-KTAS 미입력 → 중증 기준 \| 공통 수용 조건: 응급실 일반 가용 \| 지침: ST분절 상승 심근경색 → 재관류 치료가 가능한 기관 \(표준지침 p\.228, 경증은 p\.55\) · 모두 가능해야 일치: \[재관류중재술\] 심근경색, 혈관촬영기/);
+  assert.match(els["recommend-notice"].textContent, /^적용 기준: ST분절 상승 심근경색 → 재관류 치료가 가능한 기관 \(표준지침 p\.228, 경증은 p\.55\)\./);
   // 1순위를 누르면 상세가 열리고 목록에서도 강조된다.
   await results[0].fire("click");
   assert.strictEqual(els["hospital-detail"].hidden, false);
@@ -329,7 +334,7 @@ test("조건 바꾸기: 직전 조건을 함께 보내고, 바뀐 항목을 알�
   for (const listener of els["symptom-go"].listeners.click) await listener();
   await tick();
   assert.ok(!els["refine-form"].hidden);
-  assert.strictEqual(els["refine-current"].textContent, "현재 조건: 흉통 · 심혈관 의심 · 소아 아님 · 300분 이내 · 지역응급의료기관");
+  assert.strictEqual(els["refine-current"].textContent, "현재 조건: 흉통 · 심인성 의심 · Pre-KTAS 미입력(중증) · 소아 아님 · 300분 이내 · 지역응급의료기관");
 
   els["refine-query"].value = "7살 아이예요";
   await els["refine-form"].listeners.submit[0]({preventDefault() {}});
@@ -363,6 +368,7 @@ test("AI 결과 설명: 화면의 판정·근거만 보내고, 버튼을 눌렀�
   assert.ok(els["explain-area"].hidden);
   els["symptom-query"].value = "가슴 통증";
   await els["symptom-search"].listeners.submit[0]({preventDefault() {}});
+  await checkFlag(page, "stemi");
   for (const listener of els["symptom-go"].listeners.click) await listener();
   await tick();
   assert.ok(!els["explain-area"].hidden && els["explain-box"].hidden);
@@ -371,7 +377,7 @@ test("AI 결과 설명: 화면의 판정·근거만 보내고, 버튼을 눌렀�
   await tick();
   const sent = page.explainRequests[0];
   const results = page.buttonsIn("recommend-results");
-  assert.strictEqual(sent.condition, "흉통 · 심혈관 의심 · 소아 아님 · 300분 이내 · 전체 유형");
+  assert.strictEqual(sent.condition, "흉통 · 심인성 의심 · Pre-KTAS 미입력(중증) · 지역응급의료기관 이상 · 소아 아님 · 300분 이내 · 전체 유형");
   assert.deepStrictEqual(sent.hospitals.map(h => h.rank), results.map((_, index) => index + 1));
   assert.ok(sent.hospitals[0].conditions.some(text => /심근경색 일치/.test(text)), sent.hospitals[0].conditions.join(" / "));
   assert.match(sent.hospitals[0].notice, /⚠ 병원 공지: \[\[재관류중재술\] 심근경색\] 심장내과 사정으로 CAG 불가능/);
@@ -391,31 +397,41 @@ test("AI 결과 설명: 화면의 판정·근거만 보내고, 버튼을 눌렀�
 });
 
 test("두 분류: 모두 일치가 없으면 일부 일치 묶음과 한 분류만 다시 찾기 버튼", async () => {
-  const page = createPage({symptom: {category_id: "stroke", secondary_category_id: "cardiac", symptom_keywords: [], is_child: false, max_minutes: 300}});
+  // 심근경색 '가능' 병원은 분만 '불가'로 바꿔, 두 분류를 모두 만족하는 곳이 없게 한다.
+  const tweak = (hospitals, realtime) => hospitals.items.forEach((item, index) => {
+    const illness = realtime.hospitals[item.hpid]?.illness;
+    if (illness?.length && illness[0].status === "가능") illness[15].status = "불가";
+  });
+  const page = createPage({tweak, symptom: {category_id: "obstetric", secondary_category_id: "cardiac", symptom_keywords: [], is_child: false, max_minutes: 300}});
   await start(page);
   const {els} = page;
-  els["symptom-query"].value = "가슴이 아프고 한쪽 팔다리에 힘이 빠져요";
+  els["symptom-query"].value = "만삭 산모가 진통 중인데 가슴이 아파요";
   await els["symptom-search"].listeners.submit[0]({preventDefault() {}});
   assert.strictEqual(els["confirm-category2"].value, "cardiac");
-  assert.match(els["confirm-required"].textContent, /뇌경색.*\|.*심근경색.*두 분류 조건을 모두 확인/);
+  // 두 분류의 확인 항목이 함께 나온다.
+  assert.deepStrictEqual(flagLabels(page), ["고위험 태아·미숙아 분만", "분만이 임박한 만삭 임신부", "12유도 심전도에서 ST분절 상승 확인"]);
+  await checkFlag(page, "labor");
+  await checkFlag(page, "stemi");
+  assert.match(els["confirm-required"].textContent, /분만.*\|.*심근경색.*두 분류 조건을 모두 확인하고, 기관 등급은 더 높은 쪽을 적용/);
   for (const listener of els["symptom-go"].listeners.click) await listener();
   await tick();
   assert.strictEqual(page.buttonsIn("recommend-results").length, 0);
-  assert.match(els["recommend-status"].textContent, /\+ 흉통 · 심혈관 의심 · 예상 300분 이내 모두 일치 0곳 · 일부 일치 \d+곳/);
+  assert.match(els["recommend-status"].textContent, /임신 · 분만 \+ 흉통 · 심인성 의심 · Pre-KTAS 미입력\(중증\) · 예상 300분 이내 모두 일치 0곳 · 일부 일치 \d+곳/);
   assert.match(els["recommend-status"].textContent, /모두 일치 0곳 → 300분 이내 0곳/);
   const partial = page.buttonsIn("recommend-partial-list");
   assert.ok(partial.length > 0 && !els["recommend-partial"].hidden && els["recommend-partial"].open);
-  assert.ok(partial.some(b => /흉통 · 심혈관 의심 조건 빠짐: \[재관류중재술\] 심근경색 불일치/.test(b.textContent)), partial.map(b => b.textContent).join("\n"));
-  assert.match(els["refine-current"].textContent, /현재 조건: .+ \+ 흉통 · 심혈관 의심 · 소아 아님/);
+  assert.ok(partial.some(b => /흉통 · 심인성 의심 조건 빠짐: \[재관류중재술\] 심근경색 불일치/.test(b.textContent)), partial.map(b => b.textContent).join("\n"));
+  assert.ok(partial.some(b => /임신 · 분만 조건 빠짐: \[산부인과응급\] 분만 불일치/.test(b.textContent)), partial.map(b => b.textContent).join("\n"));
   const retry = els["recommend-fallback"].children;
   assert.ok(!els["recommend-fallback"].hidden && retry.length === 2);
-  assert.strictEqual(retry[1].textContent, "흉통 · 심혈관 의심만 적용해서 다시 찾기");
+  assert.strictEqual(retry[1].textContent, "흉통 · 심인성 의심만 적용해서 다시 찾기");
   await retry[1].fire("click");
   await tick();
+  // 다시 찾을 때도 체크한 항목(ST분절 상승)을 그대로 쓴다.
   const results = page.buttonsIn("recommend-results");
   assert.ok(results.length > 0 && results.every(b => page.realtime.hospitals[b.dataset.hpid].illness[0].status === "가능"));
   assert.ok(els["recommend-partial"].hidden && els["recommend-fallback"].hidden);
-  assert.match(els["refine-current"].textContent, /현재 조건: 흉통 · 심혈관 의심 · 소아 아님/);
+  assert.match(els["refine-current"].textContent, /현재 조건: 흉통 · 심인성 의심 · Pre-KTAS 미입력\(중증\) · 소아 아님/);
 });
 
 test("병원 상세: 추가 확인 사항에 전화 확인, 검색 조건 확인 필요, 공지, 이동시간 한계", async () => {
@@ -514,6 +530,7 @@ test("전화 시험 모드: ?call_test=내 번호면 모든 전화 버튼이 그
   // 증상 추천 결과·지금 수용 어려움도 모두 내 번호로
   els["symptom-query"].value = "가슴 통증";
   await els["symptom-search"].listeners.submit[0]({preventDefault() {}});
+  await checkFlag(page, "stemi");
   for (const listener of els["symptom-go"].listeners.click) await listener();
   await tick();
   const calls = [...callsIn(page, "recommend-results"), ...callsIn(page, "recommend-capacity-list")];
@@ -541,6 +558,133 @@ test("전화 시험 모드: ?call_test=내 번호면 모든 전화 버튼이 그
   const offStorage = new Map([["medinavi-call-test", "01012345678"]]);
   const off = createPage({search: "?call_test=off", storage: offStorage}); await start(off);
   assert.ok(off.els["call-test-banner"].hidden && !offStorage.has("medinavi-call-test"));
+});
+
+
+// 확인창의 분류별 체크 항목 (label > input[data-flag])
+const flagInputs = page => page.els["confirm-flags"].children.map(label => label.children[0]);
+const flagLabels = page => page.els["confirm-flags"].children.map(label => label.textContent.trim());
+async function checkFlag(page, id, on = true) {
+  const box = flagInputs(page).find(input => input.dataset.flag === id);
+  assert.ok(box, "확인 항목이 없어요: " + id);
+  box.checked = on;
+  await box.fire("change");
+}
+const typeOf = (page, button) => page.hospitals.items.find(item => item.hpid === button.dataset.hpid).dutyEmclsName;
+async function searchSymptom(page, {ktas = "", flags = [], minutes = "300", child = false} = {}) {
+  const {els} = page;
+  els["symptom-query"].value = "증상";
+  await els["symptom-search"].listeners.submit[0]({preventDefault() {}});
+  els["confirm-ktas"].value = ktas;
+  els["confirm-child"].checked = child;
+  await els["confirm-ktas"].fire("change");
+  for (const flag of flags) await checkFlag(page, flag);
+  els["rec-minutes"].value = minutes;
+  for (const listener of els["symptom-go"].listeners.click) await listener();
+  await tick();
+}
+const CENTERS = ["권역응급의료센터", "지역응급의료센터"];
+
+test("표준지침: Pre-KTAS 1·2(또는 미입력)는 중증 → 지역응급의료센터 이상, 등급만 낮은 곳은 '의료지도 필요'", async () => {
+  const page = createPage({symptom: {category_id: "respiratory", secondary_category_id: null, symptom_keywords: [], is_child: false, max_minutes: null}});
+  await start(page);
+  const {els} = page;
+  await searchSymptom(page);
+  assert.match(els["confirm-required"].textContent, /^Pre-KTAS 미입력 → 중증 기준 \| .*지침: 중증 호흡곤란 → 지역응급의료센터 이상 \(표준지침 p\.221, 소아 p\.310\).*중증 기준\(참고\): 의식 변화/);
+  const results = page.buttonsIn("recommend-results");
+  assert.ok(results.length > 0 && results.every(b => CENTERS.includes(typeOf(page, b))), results.map(b => typeOf(page, b)).join(","));
+  assert.match(results[0].textContent, /조건: 지역응급의료센터 이상 일치\((권역|지역)응급의료센터\)/);
+  // 등급은 낮지만 조건에 맞는 가까운 기관: 따로 묶고, 등급과 '의료지도 필요'를 적는다.
+  const guided = page.buttonsIn("recommend-guided-list");
+  assert.ok(guided.length > 0 && !els["recommend-guided"].hidden);
+  assert.ok(guided.every(b => !CENTERS.includes(typeOf(page, b))));
+  assert.match(guided[0].textContent, / — (지역응급의료기관|응급실운영신고기관) \(지침: 지역응급의료센터 이상\) · 의료지도 필요/);
+  assert.match(els["recommend-guided-summary"].textContent, /의료지도 필요 \(\d+곳 · 지침 등급보다 낮지만 가까운 곳\)/);
+  assert.match(els["recommend-status"].textContent, /의료지도 필요 \d+곳/);
+  assert.ok(callsIn(page, "recommend-guided-list").every(Boolean), "의료지도 필요 기관에도 전화 버튼");
+  assert.match(els["recommend-notice"].textContent, /적용 기준: 중증 호흡곤란 → 지역응급의료센터 이상/);
+  // 상세 '추가 확인 사항'에 등급 설명
+  await guided[0].fire("click");
+  assert.ok(els["detail-checks-list"].children.some(item => /표준지침 기본 등급\(지역응급의료센터 이상\)보다 낮은 기관이에요\(.+\)\. 지역 여건에 따라 의료지도를 받으면/.test(item.textContent)),
+    els["detail-checks-list"].children.map(item => item.textContent).join("\n"));
+
+  // Pre-KTAS 4(준응급)는 경증 → 가장 가까운 지역응급의료기관 (센터가 아니어도 순위에 든다)
+  await searchSymptom(page, {ktas: "4"});
+  assert.match(els["confirm-required"].textContent, /^Pre-KTAS 4\(준응급\) → 경증 기준 \| .*지침: 경증 호흡곤란 → 가장 가까운 지역응급의료기관/);
+  const mild = page.buttonsIn("recommend-results");
+  assert.ok(mild.some(b => typeOf(page, b) === "지역응급의료기관"), mild.map(b => typeOf(page, b)).join(","));
+  assert.ok(page.buttonsIn("recommend-guided-list").every(b => typeOf(page, b) === "응급실운영신고기관"));
+  assert.match(els["refine-current"].textContent, /Pre-KTAS 4\(경증\)/);
+  // AI 설명에도 적용한 등급이 들어간다.
+  await els["explain-button"].fire("click");
+  assert.match(page.explainRequests.at(-1).condition, /호흡곤란 · Pre-KTAS 4\(경증\) · 지역응급의료기관 이상/);
+});
+
+test("표준지침: 분류별 확인 항목(경련 중)과 소아 안내, 고정 중증 분류(심정지)", async () => {
+  const page = createPage({symptom: sent => sent.query === "심정지" ? {category_id: "cardiac_arrest", secondary_category_id: null, symptom_keywords: [], is_child: null, max_minutes: null}
+    : {category_id: "seizure", secondary_category_id: null, symptom_keywords: [], is_child: true, max_minutes: null}});
+  await start(page);
+  const {els} = page;
+  // 경련이 멈춤(기본) → 지역응급의료센터 이상
+  await searchSymptom(page, {child: true});
+  assert.deepStrictEqual(flagLabels(page), ["지금도 경련 중", "임산부"]);
+  assert.ok(page.buttonsIn("recommend-results").every(b => CENTERS.includes(typeOf(page, b))));
+  // 지금도 경련 중 → 가장 가까운 지역응급의료기관 이상 (거리 우선)
+  await searchSymptom(page, {flags: ["seizing"], child: true});
+  assert.match(els["confirm-required"].textContent, /지침: 경련 중 → 가장 가까운 지역응급의료기관 이상 \(표준지침 p\.257, 소아 p\.314\)/);
+  assert.match(els["recommend-notice"].textContent, /항경련제 정맥 투여가 가장 급해서/);
+  assert.ok(page.buttonsIn("recommend-results").some(b => typeOf(page, b) === "지역응급의료기관"));
+  // 새 검색이면 체크 항목을 비운다.
+  els["symptom-query"].value = "심정지";
+  await els["symptom-search"].listeners.submit[0]({preventDefault() {}});
+  assert.strictEqual(els["confirm-category"].value, "cardiac_arrest");
+  assert.deepStrictEqual(flagLabels(page), []);
+  assert.ok(els["confirm-flags"].hidden);
+  // 심정지는 Pre-KTAS와 상관없이 같은 기준이고, 중증도 문구를 붙이지 않는다.
+  els["confirm-ktas"].value = "5";
+  await els["confirm-ktas"].fire("change");
+  assert.match(els["confirm-required"].textContent, /^공통 수용 조건: 응급실 일반 가용 \| 지침: 심정지 → 가장 가까운 지역응급의료기관 이상/);
+});
+
+test("표준지침: 데이터가 없는 조건이 핵심인 분류(뇌졸중·정신과·뱀)는 일반 기준과 제외 사유", async () => {
+  const page = createPage({symptom: {category_id: "stroke", secondary_category_id: null, symptom_keywords: [], is_child: false, max_minutes: null}});
+  await start(page);
+  const {els} = page;
+  await searchSymptom(page);
+  assert.match(els["confirm-required"].textContent, /⚠ 뇌졸중은 '즉각적인 혈전용해치료가 가능한 기관' 정보가 API에 없어/);
+  assert.match(els["recommend-notice"].textContent, /119구급상황관리센터에 병원 정보를 요청하세요/);
+  // 뇌경색 재관류 조건은 쓰지 않는다 (뇌경색 '불가' 병원도 순위에 들 수 있음).
+  assert.ok(page.buttonsIn("recommend-results").every(b => !/뇌경색/.test(b.textContent)));
+  const ids = page.run("Array.from(document.querySelector('#confirm-category').options, option => option.value)");
+  for (const id of ["stroke", "psychiatric", "snakebite"]) assert.ok(ids.includes(id), id);
+  assert.ok(!ids.includes("pediatric"), "소아 일반 분류는 없앴어요");
+});
+
+test("표준지침: 중증외상은 권역외상센터, 정보가 없으면 확인 필요, 멀면 헬기 안내", async () => {
+  const trauma = {symptom: {category_id: "trauma", secondary_category_id: null, symptom_keywords: [], is_child: false, max_minutes: null}};
+  // 1) 외상센터 지정 정보가 hospitals.json에 없을 때: 등급을 '확인 필요'로 두고 알린다.
+  const page = createPage(trauma); await start(page);
+  await searchSymptom(page);
+  assert.strictEqual(page.buttonsIn("recommend-results").length, 0);
+  assert.ok(page.els["recommend-unknown-list"].children.some(item => /권역외상센터 확인 필요\(외상센터 지정 정보 미반영\)/.test(item.textContent)));
+  assert.match(page.els["recommend-notice"].textContent, /^⚠ 외상센터 지정 정보가 아직 반영되지 않아/);
+  // 2) 외상센터가 멀면(30km 넘음) 헬기 이송·의료지도 안내 (가짜 길찾기: 순서 i번 병원은 (i+1)×2.5km)
+  const far = createPage({...trauma, tweak: hospitals => hospitals.items.forEach((item, index) => { item.trauma_center = index === 14; })});
+  await start(far);
+  await searchSymptom(far);
+  const ranked = far.buttonsIn("recommend-results");
+  assert.ok(ranked.every(b => far.hospitals.items.find(item => item.hpid === b.dataset.hpid).trauma_center));
+  assert.match(far.els["recommend-notice"].textContent, /^🚁 권역외상센터까지 약 \d+분 · 37\.5km\. 표준지침 p\.54, p\.325/);
+  // 외상센터가 아닌 가까운 기관은 '의료지도 필요'로
+  assert.ok(far.buttonsIn("recommend-guided-list").length > 0);
+  // 3) 가까우면 헬기 안내를 띄우지 않는다. 경증(Pre-KTAS 3~5)은 가장 가까운 지역응급의료기관.
+  const near = createPage({...trauma, tweak: hospitals => hospitals.items.forEach((item, index) => { item.trauma_center = index === 1; })});
+  await start(near);
+  await searchSymptom(near);
+  assert.doesNotMatch(near.els["recommend-notice"].textContent, /🚁/);
+  await searchSymptom(near, {ktas: "3"});
+  assert.match(near.els["confirm-required"].textContent, /지침: 경증 외상 → 가장 가까운 지역응급의료기관/);
+  assert.ok(near.buttonsIn("recommend-results").length > 0);
 });
 
 // ---------------------------------------------------------------------------

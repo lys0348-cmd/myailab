@@ -103,6 +103,7 @@ dialog.sheet::backdrop { background:#0f172a80 }
 .cond-edit select, .cond-edit input:not([type=checkbox]) { width:100%; min-height:44px; border:1px solid #cfd5de; border-radius:10px; padding:8px 12px; background:white }
 .cond-edit .two { display:grid; grid-template-columns:1fr 1fr; gap:10px }
 #confirm-keywords, #confirm-required { font-size:13px; color:var(--muted) }
+#confirm-flags label { display:block; margin:4px 0; font-size:14px }
 #confirm-keywords:empty, #confirm-required:empty, #symptom-note:empty { display:none }
 #symptom-note { font-size:14px; color:var(--wait); margin:12px 0 0 }
 .origin-box { flex-wrap:wrap; align-items:center; padding:8px 8px 8px 14px }
@@ -387,7 +388,7 @@ details.why li { display:list-item }
       <textarea id="symptom-query" rows="2" maxlength="300" placeholder="예: 70대 남성 흉통, 식은땀 1시간 거리 병원 추천해줘" required></textarea>
     </div>
 
-    <div class="field-label" id="ktas-label">Pre-KTAS <span class="right">구급대원 평가값 · 순위 미반영</span></div>
+    <div class="field-label" id="ktas-label">Pre-KTAS <span class="right">구급대원 평가값 · 1·2단계(미입력)=중증, 3~5단계=경증 기준</span></div>
     <div class="ktas" role="group" aria-labelledby="ktas-label">
       <button type="button" data-level="1" aria-pressed="false">1<small>소생</small></button>
       <button type="button" data-level="2" aria-pressed="false">2<small>긴급</small></button>
@@ -465,6 +466,8 @@ details.why li { display:list-item }
         <select id="rec-type"><option value="">전체</option></select>
       </p>
     </div>
+    <!-- 추가(표준지침 2023): 분류별 확인 항목 (symptom-recommend.js가 채움) -->
+    <div id="confirm-flags" hidden></div>
     <p><label><input type="checkbox" id="confirm-child"> 소아 환자 (만 18세 미만)</label></p>
     <p id="confirm-keywords"></p>
     <p id="confirm-required"></p>
@@ -562,6 +565,12 @@ details.why li { display:list-item }
       <h3>추천 목록 <span class="note">(필수 조건 충족 · 이동시간순 1~5)</span></h3>
       <ol id="recommend-results"></ol>
       <p id="recommend-fallback" hidden></p>
+      <!-- 추가(표준지침 2023): 조건은 맞지만 지침 등급보다 낮은 가까운 기관 -->
+      <details id="recommend-guided" class="fold" hidden>
+        <summary id="recommend-guided-summary">의료지도 필요</summary>
+        <p>지침의 기본 등급보다 낮지만 조건에 맞는 가까운 기관이에요. 표준지침은 지역 여건에 따라 의료지도를 받아 치료 가능한 가까운 기관으로 이송할 수 있다고 해요.</p>
+        <ul id="recommend-guided-list"></ul>
+      </details>
       <details id="recommend-capacity" class="fold" hidden>
         <summary id="recommend-capacity-summary">지금 수용 어려움</summary>
         <p>진료 역량은 있지만 지금 응급실 병상·수술실·장비가 비어 있지 않은 기관이에요. 상황이 바뀔 수 있으니 필요하면 전화로 확인해 주세요.</p>
@@ -712,13 +721,13 @@ details.why li { display:list-item }
 <script src="/static/judgement.js?v=3"></script>
 <!-- 원본과 같게: 병원에 바로 전화 걸기 버튼과 시험 모드(?call_test=휴대폰번호) -->
 <script src="/static/call.js?v=1"></script>
-<script src="/static/map.js?v=21"></script>
+<script src="/static/map.js?v=22"></script>
 <script src="/static/hospital-route-view.js?v=4"></script>
 <script src="/static/origin-search.js?v=1"></script>
 <script src="/static/realtime.js?v=7"></script>
-<script src="/static/symptom-recommend.js?v=9"></script>
+<script src="/static/symptom-recommend.js?v=10"></script>
 <!-- 추가: 작업 건·연락 기록 (이 탭에만 임시 저장) / 시안 화면 전환·카드 -->
 <script src="/static/case_joonghee.js?v=3"></script>
-<script src="/static/ui_joonghee.js?v=28"></script>
+<script src="/static/ui_joonghee.js?v=29"></script>
 <script src="https://oapi.map.naver.com/openapi/v3/maps.js?ncpKeyId=qbtbo9ux4q&amp;submodules=geocoder" onload="showMap()" onerror="mapError()"></script>
 </html>

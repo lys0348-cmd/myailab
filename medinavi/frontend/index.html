@@ -28,7 +28,8 @@ button { min-width:48px; min-height:48px; padding:8px 16px; border:1px solid #50
 #explain-reasons { margin:0; padding-left:20px }
 #refine-form { background:#f3f8f6; border-radius:8px; padding:8px 12px; margin:8px 0 }
 #recommend-fallback button { margin:4px 8px 4px 0 }
-#recommend-partial-list button, #recommend-capacity-list button { text-align:left }
+#recommend-partial-list button, #recommend-capacity-list button, #recommend-guided-list button { text-align:left }
+#confirm-flags label { display:block; margin:4px 0 }
 #refine-query { width:100%; max-width:420px; box-sizing:border-box }
 .realtime-status { margin:4px 0; overflow-wrap:anywhere }
 .realtime-status[data-status="가능"] strong { color:#147d52 }
@@ -80,20 +81,11 @@ details.realtime-status summary { cursor:pointer }
         <p id="origin-status" role="status"></p>
         <ul id="origin-results" aria-label="주소 검색 결과"></ul>
     </form>
-    <!-- 추가: 증상 기반 추천. AI는 증상 분류만 하고, 추천은 임시 규칙표(data/recommendation_rules.json)로 계산한다. -->
+    <!-- 추가: 증상 기반 추천. AI는 증상 분류만 하고, 추천은 표준지침(2023) 기준 규칙표(data/recommendation_rules.json)로 계산한다. -->
     <form id="symptom-search">
         <p>
             <label for="symptom-query">환자 상태와 증상으로 후보 병원 찾기</label><br>
             <textarea id="symptom-query" rows="3" maxlength="300" placeholder="예: 70대 남성, 30분 전부터 가슴 통증과 식은땀" required></textarea>
-        </p>
-        <p>
-            <label for="prektas">Pre-KTAS 등급</label><br>
-            <select id="prektas" disabled aria-describedby="prektas-note">
-                <option value="">선택 안 함</option>
-                <option value="1">1 소생</option><option value="2">2 긴급</option><option value="3">3 응급</option>
-                <option value="4">4 준응급</option><option value="5">5 비응급</option>
-            </select>
-            <small id="prektas-note">자문 후 적용 예정이에요.</small>
         </p>
         <button id="symptom-button" type="submit">증상 분류하기</button>
         <p class="rules-badge"></p>
@@ -111,14 +103,26 @@ details.realtime-status summary { cursor:pointer }
             <select id="confirm-category2"><option value="">없음</option></select>
         </p>
         <p id="confirm-keywords"></p>
-        <p id="confirm-required"></p>
+        <!-- 추가(표준지침 2023): 구급대원이 고른 Pre-KTAS로 중증(1·2단계, 미입력)·경증(3~5단계) 기준을 고른다. AI가 정하지 않는다. -->
+        <p>
+            <label for="confirm-ktas">Pre-KTAS 등급 (구급대원 평가)</label><br>
+            <select id="confirm-ktas" aria-describedby="confirm-ktas-note">
+                <option value="">선택 안 함 (중증으로 봄)</option>
+                <option value="1">1 소생</option><option value="2">2 긴급</option><option value="3">3 응급</option>
+                <option value="4">4 준응급</option><option value="5">5 비응급</option>
+            </select>
+            <small id="confirm-ktas-note">1·2단계는 중증, 3~5단계는 경증 기준을 적용해요.</small>
+        </p>
+        <!-- 추가(표준지침 2023): 분류별 확인 항목 (예: ST분절 상승, 지금도 경련 중, 만삭 분만) -->
+        <div id="confirm-flags" hidden></div>
         <p><label><input type="checkbox" id="confirm-child"> 소아 환자 (만 18세 미만)</label></p>
+        <p id="confirm-required"></p>
         <p>
             <label for="rec-minutes">최대 예상 이동시간(분)</label><br>
             <input id="rec-minutes" type="number" min="1" max="600" value="60" required>
         </p>
         <p>
-            <label for="rec-type">응급의료기관 유형 (Pre-KTAS 적용 전까지 직접 선택)</label><br>
+            <label for="rec-type">기관 유형 더 좁히기 (보통은 '전체'. 지침 등급은 자동으로 적용돼요)</label><br>
             <select id="rec-type"><option value="">전체</option></select>
         </p>
         <p id="symptom-note" role="status"></p>
@@ -147,6 +151,12 @@ details.realtime-status summary { cursor:pointer }
         </form>
         <ol id="recommend-results"></ol>
         <p id="recommend-fallback" hidden></p>
+        <!-- 추가(표준지침 2023): 조건은 맞지만 지침 등급보다 낮은 가까운 기관 -->
+        <details id="recommend-guided" hidden>
+            <summary id="recommend-guided-summary">의료지도 필요</summary>
+            <p>지침의 기본 등급(예: 지역응급의료센터 이상)보다 낮지만 조건에 맞는 가까운 기관이에요. 표준지침은 지역 여건에 따라 의료지도를 받아 치료 가능한 가까운 기관으로 이송할 수 있다고 해요.</p>
+            <ul id="recommend-guided-list"></ul>
+        </details>
         <details id="recommend-capacity" hidden>
             <summary id="recommend-capacity-summary">지금 수용 어려움</summary>
             <p>진료 역량은 있지만 지금 응급실 병상·수술실·장비가 비어 있지 않은 기관이에요. 상황이 바뀔 수 있으니 필요하면 전화로 확인해 주세요.</p>
@@ -233,7 +243,7 @@ details.realtime-status summary { cursor:pointer }
 <script src="/static/judgement.js?v=3"></script>
 <!-- 추가: 병원에 바로 전화 걸기 버튼과 시험 모드(?call_test=휴대폰번호) -->
 <script src="/static/call.js?v=1"></script>
-<script src="/static/map.js?v=21"></script>
+<script src="/static/map.js?v=22"></script>
 <!-- 추가: 병원 강조·내 위치·자동 경로 표시 기능 -->
 <script src="/static/hospital-route-view.js?v=4"></script>
 <!-- 추가: 주소를 검색해 출발지로 지정 -->
@@ -241,7 +251,7 @@ details.realtime-status summary { cursor:pointer }
 <!-- 추가: 실시간 병상·중증질환 수용 가능 정보 -->
 <script src="/static/realtime.js?v=7"></script>
 <!-- 추가: 증상 기반 추천 (임시 규칙표 · 자문 전) -->
-<script src="/static/symptom-recommend.js?v=9"></script>
+<script src="/static/symptom-recommend.js?v=10"></script>
 <!-- 웹 지도용 공개 Client ID만 사용한다. -->
 <script src="https://oapi.map.naver.com/openapi/v3/maps.js?ncpKeyId=qbtbo9ux4q" onload="showMap()" onerror="mapError()"></script>
 </html>

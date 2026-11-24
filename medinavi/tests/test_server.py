@@ -66,11 +66,45 @@ class HospitalsAndRules(unittest.TestCase):
         ids = [category["id"] for category in rules["categories"]]
         self.assertEqual(len(ids), len(set(ids)))
         self.assertIn("unclear", ids)
-        items = [item for category in rules["categories"] for key in ("required", "required_any", "reference") for item in category.get(key, [])]
+        variants = [variant for category in rules["categories"] for variant in category["variants"]]
+        items = [item for variant in variants for key in ("required", "required_any", "reference") for item in variant.get(key, [])]
         items += rules.get("child_required", []) + rules.get("child_reference", []) + rules.get("common_required", [])
         wrong = [item for item in items if item["name"] not in names[item["type"]]]
         self.assertEqual(wrong, [], "규칙표 이름이 실제 데이터 이름과 달라요")
         self.assertIn("pre_ktas", rules)
+
+    def test_rules_follow_guideline_structure(self):
+        # 표준지침(2023) 구조: 분류마다 기준(variants)·기관 등급·지침 쪽수가 있고, 중증/경증 어느 쪽이든 맞는 기준이 있어야 한다.
+        rules = self.app.get_rules()
+        levels = {level["id"] for level in rules["levels"]}
+        self.assertEqual(levels, {"any", "local_institution", "local_center", "trauma_center"})
+        types = {item["dutyEmclsName"] for item in self.app.get_hospitals()["items"]}
+        self.assertEqual(types - set(rules["facility_ranks"]), set(), "등급표에 없는 기관 유형이 있어요")
+        self.assertTrue(rules["pre_ktas"]["enabled"])
+        self.assertEqual(rules["pre_ktas"]["severe_levels"], [1, 2])
+        ids = [category["id"] for category in rules["categories"]]
+        self.assertNotIn("pediatric", ids)
+        for category in rules["categories"]:
+            name = category["id"]
+            self.assertTrue(category.get("source", "").startswith("표준지침 p."), name)
+            flags = {flag["id"] for flag in category.get("flags", [])}
+            for variant in category["variants"]:
+                self.assertIn(variant["level"], levels, name)
+                self.assertTrue(variant["title"], name)
+                when = variant.get("when", {})
+                self.assertLessEqual(set(when), {"severity", "flag", "child"}, name)
+                self.assertIn(when.get("severity", "severe"), ("severe", "mild"), name)
+                if "flag" in when:
+                    self.assertIn(when["flag"], flags, name)
+            # 체크 항목 없이 중증·경증(성인) 모두 맞는 기준이 있어야 한다.
+            for severity in ("severe", "mild"):
+                effective = category.get("severity_fixed", severity)
+                matched = [variant for variant in category["variants"]
+                           if variant.get("when", {}).get("severity", effective) == effective and "flag" not in variant.get("when", {}) and not variant.get("when", {}).get("child")]
+                self.assertTrue(matched, f"{name} {severity}")
+            if category.get("excluded"):
+                self.assertTrue(category.get("exclusion_reason"), name)
+        self.assertEqual({category["id"] for category in rules["categories"] if category.get("excluded")}, {"stroke", "psychiatric", "snakebite"})
 
 
 class Realtime(unittest.TestCase):
@@ -173,7 +207,8 @@ class SymptomParse(unittest.TestCase):
         result = self.parse({"category_id": "cardiac", "secondary_category_id": None, "symptom_keywords": ["가슴 통증", "식은땀", "심근경색"], "is_child": False, "max_minutes": 40},
                             "70대 남성 가슴 통증과 식은땀, 40분 안에")
         self.assertEqual((result.category_id, result.symptom_keywords, result.is_child, result.max_minutes), ("cardiac", ["가슴 통증", "식은땀"], False, 40))
-        self.assertIn("- cardiac: 흉통 · 심혈관 의심", self.openai.last["instructions"])
+        self.assertIn("- cardiac: 흉통 · 심인성 의심", self.openai.last["instructions"])
+        self.assertIn("심폐소생술 중이면 다른 증상이 있어도 cardiac_arrest 하나만", self.openai.last["instructions"])
 
     def test_invalid_values(self):
         result = self.parse({"category_id": "heart", "secondary_category_id": None, "symptom_keywords": [], "is_child": None, "max_minutes": 0}, "어지러움")
