@@ -183,6 +183,9 @@
   const minutes = $("#rec-minutes");
   const type = $("#rec-type");
   const child = $("#confirm-child");
+  const ageInput = $("#confirm-age");
+  const ageUnit = $("#confirm-age-unit");
+  const ageKey = () => (ageInput?.value || "") + (ageUnit?.value || "");
   let aiValues = null;   // 시트가 열릴 때 AI가 채운 값 (사용자가 바꾸면 '직접 수정'으로 표시)
   // AI가 이동시간을 실제로 정했는지 알기 위해 증상 분류 응답에서 max_minutes만 기억한다 (원본 코드는 그대로 둠).
   let aiMinutes = null;
@@ -208,20 +211,42 @@
     $("#sum-category").innerHTML = esc(categoryLabel() + (child.checked ? " · 소아" : "")) + (aiValues ? (sameCategory ? tag("ai", "AI 해석") : tag("user", "직접 수정")) : tag("user", "직접 선택"));
     const sameMinutes = aiValues && aiValues.min === minutes.value;
     $("#sum-minutes").innerHTML = esc((minutes.value || "-") + "분 이내") + (sameMinutes ? (aiValues.minFromAi ? tag("ai", "AI 해석") : tag("user", "기본값")) : tag("user", "직접 수정"));
-    // 기관 유형은 AI가 정하지 않는다. 비워 두면 유형 제한 없이 '진료 조건을 충족한 기관'을 모두 찾는다.
-    $("#sum-type").innerHTML = esc(type.value || "제한 없음") + tag("user", type.value ? "직접 선택" : "필요하면 수정");
     const k = Case.ktasNow();
+    // 표준지침(2023) 적용 기준: 분류·Pre-KTAS·나이·확인 항목으로 symptom-recommend.js가 정한 값을 보여준다.
+    const guide = window.medinaviRecommend?.summary?.();
+    // 기관 등급은 지침이 정한다. '기관 유형 더 좁히기'를 고르면 그 유형만 본다.
+    $("#sum-type").innerHTML = guide
+      ? esc(guide.level) + (type.value ? esc(" · " + type.value + "만") + tag("user", "직접 선택") : tag("dev", "지침 자동"))
+      : esc(type.value || "제한 없음") + tag("user", type.value ? "직접 선택" : "필요하면 수정");
     // 평가 시각은 화면에 보이지 않고 작업 건 기록·전달 요약에만 남긴다.
-    $("#sum-ktas").innerHTML = esc(k ? k.level + "등급 (" + ktasNames[k.level] + ")" : "미입력") + tag("user", "구급대원 입력");
+    const severity = guide && !guide.fixed ? (guide.severity === "severe" ? " → 중증 기준" : " → 경증 기준") : "";
+    $("#sum-ktas").innerHTML = esc((k ? k.level + "등급 (" + ktasNames[k.level] + ")" : "미입력") + severity) + tag("user", "구급대원 입력");
     $("#sum-ktas-warn").hidden = !(k && Number(k.level) <= 2);
+    // 나이: AI가 채운 값 그대로면 'AI 해석', 바꿨으면 '직접 수정', 비어 있으면 '모르면 비워 둠'
+    if (guide) {
+      const sameAge = aiValues && aiValues.age === ageKey();
+      $("#sum-age").innerHTML = esc(guide.ageText) + (guide.ageMonths == null
+        ? tag("user", child.checked ? "소아로 보기" : "모르면 비워 둠")
+        : sameAge ? tag("ai", "AI 해석") : tag("user", "직접 입력"));
+      $("#sum-guide").hidden = false;
+      $("#sum-guide-main").textContent = guide.guides.map(item => (guide.guides.length > 1 ? item.label + ": " : "") + item.title).join(" / ");
+      $("#sum-guide-src").textContent = [...new Set(guide.guides.map(item => item.source).filter(Boolean))].join(" · ")
+        + (guide.guides.length > 1 ? " · 두 분류 조건을 모두 보고, 기관 등급은 더 높은 쪽" : "");
+      $("#flag-wrap").hidden = !guide.flags.length;
+      const exclusions = guide.guides.filter(item => item.excluded).map(item => item.exclusion);
+      $("#sum-guide-warn").hidden = !exclusions.length;
+      $("#sum-guide-warn").textContent = exclusions.join(" ");
+    }
   }
+  // 확인창 값(분류·Pre-KTAS·나이·확인 항목)이 바뀌어 적용 기준이 다시 정해지면 요약도 다시 그린다.
+  document.addEventListener("medinavi-guide-change", () => { if (dialog.open) fillSummary(); });
   function setEdit(open) {
     edit.hidden = !open;
     editToggle.textContent = open ? "수정 닫기" : "조건 수정";
     editToggle.setAttribute("aria-expanded", String(open));
   }
   editToggle.addEventListener("click", () => setEdit(edit.hidden));
-  for (const control of [category1, category2, minutes, type, child]) {
+  for (const control of [category1, category2, minutes, type, child, ageInput, ageUnit].filter(Boolean)) {
     control.addEventListener("input", fillSummary);
     control.addEventListener("change", fillSummary);
   }
@@ -231,7 +256,7 @@
     // symptom-recommend.js가 값을 채운 직후의 상태를 'AI 해석값'으로 기억한다.
     setTimeout(() => {
       const failed = $("#symptom-note").textContent.includes("직접");
-      aiValues = failed ? null : {c1: category1.value, c2: category2.value, child: child.checked, min: minutes.value, minFromAi: aiMinutes != null && String(aiMinutes) === minutes.value};
+      aiValues = failed ? null : {c1: category1.value, c2: category2.value, child: child.checked, min: minutes.value, minFromAi: aiMinutes != null && String(aiMinutes) === minutes.value, age: ageKey()};
       if (failed) setEdit(true);   // AI가 실패하면 직접 고르도록 입력칸을 펼친다
       fillSummary();
     });
@@ -297,6 +322,30 @@
     $("#all").click();
   });
 
+
+  // ---- 추가(표준지침 2023): 결과 위 적용 기준 배너와 경고 -------------------
+  const banner = $("#guide-banner");
+  document.addEventListener("medinavi-recommend-done", event => {
+    const result = event.detail;
+    if (!banner || !result) return;
+    const head = result.guides.map(item => item.title).join(" / ");
+    $("#guide-banner-main").textContent = head + (result.severityText ? " · " + result.severityText.replace(/ 기준$/, "") : "") + " · " + result.ageText;
+    const notes = $("#guide-banner-notes");
+    notes.replaceChildren();
+    for (const text of [...result.guides.map(item => item.label + ": " + item.title + (item.source ? " (" + item.source + ")" : "")), ...result.notes,
+      "조건은 맞지만 지침 등급보다 낮은 가까운 기관은 '의료지도 필요'로 따로 보여줘요."]) {
+      const li = document.createElement("li");
+      li.textContent = text;
+      notes.append(li);
+    }
+    const warn = [result.helicopter, ...result.exclusions].filter(Boolean).join(" ");
+    $("#guide-banner-warn").hidden = !warn;
+    $("#guide-banner-warn").textContent = warn;
+    banner.hidden = false;
+  });
+  // 조건 검색이나 새 추천을 시작하면 이전 기준 배너를 숨긴다.
+  document.addEventListener("medinavi-search", () => { if (banner) banner.hidden = true; });
+
   // ---- ③ 결과 카드 --------------------------------------------------------
   const track = $("#card-track");
   const count = $("#card-count");
@@ -314,7 +363,7 @@
   const MAX_CARDS = 5;
   // 순위에 들지 못한 기관도 빼지 않고 이름표를 달아 5장까지 채운다 (교수님 피드백: 확인 필요 기관은 아래에 표시).
   const TIERS = [
-    {id: "guided", list: "#recommend-guided-list", label: "의료지도 필요", cls: "t-partial"},
+    {id: "guided", list: "#recommend-guided-list", label: "의료지도 필요", cls: "t-guided"},
     {id: "partial", list: "#recommend-partial-list", label: "일부 조건 일치", cls: "t-partial"},
     {id: "unknown", list: "#recommend-unknown-list", label: "조건 확인 필요", cls: "t-unknown"},
     {id: "capacity", list: "#recommend-capacity-list", label: "지금 수용 어려움", cls: "t-busy"},
@@ -374,7 +423,12 @@
     const rankBadge = tier
       ? '<span class="rank ' + tier.cls + '">' + (index + 1) + ' 참고<small>' + tier.label + '</small></span>'
       : '<span class="rank">' + (index + 1) + '<small>이동시간순</small></span>';
-    const tierLine = tier
+    // 의료지도 필요: 조건은 맞지만 지침 등급보다 낮은 기관 (표준지침: 의료지도를 받으면 가까운 기관으로 이송 가능)
+    const guidedText = tier?.id === "guided" ? (entry.reason || "").replace(/ · 조건 일치$/, "") : "";
+    const tierLine = tier?.id === "guided"
+      ? '<li class="st-wait"><span class="mark" aria-hidden="true">△</span><span>지침 등급보다 낮은 기관' + (guidedText ? ': ' + esc(guidedText) : '') +
+          ' · 의료지도를 받으면 이송할 수 있어요</span></li>'
+      : tier
       ? '<li class="' + (tier.id === "capacity" ? "st-bad" : "st-wait") + '"><span class="mark" aria-hidden="true">' + (tier.id === "capacity" ? "✖" : "?") + '</span><span>' +
           tier.label + (entry.reason ? ': ' + esc(entry.reason) : '') + ' · 병원에 직접 확인 필요</span></li>'
       : condLine;

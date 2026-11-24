@@ -58,6 +58,7 @@
   const refineCurrent = $("#refine-current");
   let rules = null;
   let request = null;
+  let lastResult = null;   // 마지막 추천의 적용 기준·경고 (화면 표시용)
   // 조건 바꾸기: 직전 검색 조건과, 확인창에 올라간(아직 검색 전) 문장
   let lastCondition = null;
   let pendingQuery = "";
@@ -247,6 +248,28 @@
       + (common.length ? "공통 수용 조건: " + common.join(", ") + " 가용 | " : "") + (ids.length === 1
       ? guideTextOf(ids[0], context)
       : ids.map(id => category(id).label + " — " + guideTextOf(id, context)).join(" | ") + " (두 분류 조건을 모두 확인하고, 기관 등급은 더 높은 쪽을 적용해요)");
+    // 화면(새 화면의 조건 확인 시트 등)이 적용 기준을 다시 그릴 수 있게 알린다.
+    document.dispatchEvent(new CustomEvent("medinavi-guide-change", {detail: guideSummary()}));
+  }
+
+  // 확인창의 현재 값으로 정한 적용 기준 요약 (화면 표시용, 판정은 하지 않음)
+  function guideSummary() {
+    if (!rules) return null;
+    const ids = selectedIds();
+    const context = dialogContext();
+    const variants = ids.map(id => variantOf(category(id), context));
+    return {
+      fixed: ids.every(id => category(id).severity_fixed),
+      ktas: context.ktas,
+      severity: severityOf(context.ktas),
+      severityText: severityText(context.ktas),
+      level: strictestLevel(variants).label,
+      guides: ids.map((id, index) => ({label: category(id).label, title: variants[index].title, source: category(id).source || "", excluded: Boolean(category(id).excluded), exclusion: category(id).exclusion_reason || ""})),
+      ageMonths: context.ageMonths,
+      ageText: ageText(context.ageMonths, context.isChild),
+      isChild: context.isChild,
+      flags: [...flagsBox?.children || []].map(label => ({id: label.children?.[0]?.dataset.flag, label: label.textContent.trim(), checked: Boolean(label.children?.[0]?.checked)})),
+    };
   }
 
   function labelOf(ids) {
@@ -268,6 +291,7 @@
     fallbackBox.replaceChildren();
     fallbackBox.hidden = true;
     explainPayload = null;
+    lastResult = null;
     explainArea.hidden = true;
     explainBox.hidden = true;
     explainSummary.textContent = "";
@@ -369,9 +393,9 @@
   // 결과 묶음 정하기 (표준지침 등급 반영)
   //  - 등급 충족: 일치 → 1~5순위 / 확인 필요 / 일부 일치 / 지금 수용 어려움 / 불일치 → 제외
   //  - 등급 확인 필요(외상센터 정보 미반영 등): 확인 필요 또는 지금 수용 어려움
-  //  - 등급 미달: 조건이 일치하거나 확인 필요면 '의료지도 필요', 아니면 제외
+  //  - 등급 미달: 조건이 모두 일치하면 '의료지도 필요' (지침: 의료지도를 받아 '치료 가능한' 가까운 기관으로), 아니면 제외
   function groupOf(entry) {
-    if (entry.level === "불가") return entry.verdict === "일치" || entry.verdict === "확인 필요" ? "guided" : "excluded";
+    if (entry.level === "불가") return entry.verdict === "일치" ? "guided" : "excluded";
     if (entry.capacity) return "busy";
     if (entry.verdict === "불일치") return "excluded";
     if (entry.level === "확인 필요") return "unknown";
@@ -494,9 +518,8 @@
       const choice = document.createElement("button");
       choice.type = "button";
       choice.dataset.hpid = hospital.hpid;
-      const unsure = checks.filter(check => check.kind !== "reference" && check.kind !== "level" && check.status !== "가능").map(window.medinaviJudge.checkText);
       choice.textContent = hospital.dutyName + " · 약 " + Math.ceil(route.duration_ms / 60000) + "분 — " + (hospital.dutyEmclsName || "구분 없음")
-        + " (지침: " + level.label + ") · 의료지도 필요" + (unsure.length ? " · " + unsure.join(", ") : "");
+        + " (지침: " + level.label + ") · 조건 일치";
       choice.onclick = () => showHospitalDetail(hospital, data, route);
       item.append(choice);
       window.medinaviCall?.attach(item, hospital);
@@ -558,6 +581,15 @@
     }
     areaStatus.textContent = summary.join(" · ") + (recommended.length ? "" : ". [" + funnel + "] 조건을 넓히거나 의료지도 필요·확인 필요 목록의 병원에 연락해 주세요.");
     notice.textContent = (helicopter ? helicopter + " " : "") + (notes ? notes + " " : "") + rules.notice + " 예상 시간은 일반 자동차 기준 참고값이에요.";
+    // 화면이 결과 위에 적용 기준·경고를 보여줄 수 있게 알린다.
+    lastResult = {
+      level: level.label, severityText: fixed ? "" : severityText(ktas), ageText: ageText(ageMonths, isChild),
+      guides: ids.map((id, index) => ({label: category(id).label, title: variants[index].title, source: category(id).source || ""})),
+      exclusions: ids.map(id => category(id).exclusion_reason).filter(Boolean),
+      helicopter, notes: [...variants.map(variant => variant.note), ...ids.map(id => (isChild ? category(id).child_note : ""))].filter(Boolean),
+      counts: {recommended: recommended.length, guided: guided.length, busy: busy.length, partial: partial.length, unknown: unknown.length},
+    };
+    document.dispatchEvent(new CustomEvent("medinavi-recommend-done", {detail: lastResult}));
     // AI 결과 설명: 화면에 보인 판정·근거만 보내고, 버튼을 눌렀을 때만 만든다.
     const clip = (text, length) => String(text || "").slice(0, length);
     const checkText = window.medinaviJudge.checkText;
@@ -717,5 +749,7 @@
     if (event.detail !== "recommend") clearArea();
   });
   document.addEventListener("originchange", clearArea);
+  // 화면 스크립트용: 지금 확인창의 적용 기준, 마지막 추천 결과 요약
+  window.medinaviRecommend = {summary: guideSummary, lastResult: () => lastResult};
   loadRules().catch(() => {});
 })();

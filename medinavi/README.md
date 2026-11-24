@@ -10,7 +10,10 @@
 | 파일 | 하는 일 |
 | --- | --- |
 | `app.py` | 화면·병원 데이터를 전달하고 네이버 자동차 길찾기를 요청하는 FastAPI 서버 |
-| `frontend/index.html` | 지도·병원 목록·상세정보 화면과 모바일 스타일 |
+| `frontend/index.html` | **기본 화면** (2026-11-25부터, 팀원 새 화면 PR #33 기반): 홈(출발지·증상·Pre-KTAS 버튼) → 검색 조건 확인 시트(나이·적용 기준·확인 항목) → 결과(추천 목록·카드·지도·적용 기준 배너) |
+| `frontend/ui_joonghee.js`, `frontend/case_joonghee.js` | 기본 화면의 화면 전환·카드·조건 확인 요약, 작업 건(Pre-KTAS 평가 시각·연락 기록·전달 요약, sessionStorage) |
+| `frontend/index_classic.html` | 예전 원본 화면. 백업과 화면 시험용. 기능 스크립트·요소 id는 기본 화면과 같게 유지 (`/static/index_classic.html`) |
+| `frontend/index_joonghee.html` | 예전 새 화면 주소. 기본 화면(`/`)으로 이동 |
 | `frontend/call.js` | 병원에 바로 전화 걸기 버튼과 전화 시험 모드(`?call_test=휴대폰번호`) |
 | `frontend/judgement.js` | 조건 검색과 증상 추천이 함께 쓰는 판정(일치 / 불일치 / 확인 필요)과 길찾기 묶음 조회 |
 | `frontend/map.js` | 지도 표시, 현재 위치, 병원 목록, 거리·시간 조회 |
@@ -56,7 +59,7 @@ Render 대시보드의 **medinavi** 서비스 → **Settings**에 다음 값이 
 
 - 네이버 Maps 애플리케이션에서 **Web Dynamic Map**, **Directions 5**, **Geocoding**(출발지 주소 검색)을 사용할 수 있어야 합니다.
 - 네이버 Maps의 Web 서비스 URL에 `https://medinavi.onrender.com`(로컬 시험 시 `http://localhost:8000`)이 등록되어야 지도가 열립니다.
-- 웹 지도는 `frontend/index.html`의 공개 Client ID를 사용합니다. Render 환경변수의 인증정보도 같은 Maps 애플리케이션 것이어야 합니다.
+- 웹 지도는 `frontend/index.html`(백업 화면은 `index_classic.html`)의 공개 Client ID를 사용합니다. Render 환경변수의 인증정보도 같은 Maps 애플리케이션 것이어야 합니다.
 - Render 무료 인스턴스는 한동안 접속이 없으면 잠들어, 첫 접속이 30초~1분 정도 느릴 수 있습니다. 잠들면 실시간 정보 저장분과 호출 제한 기록도 초기화됩니다. **발표·시연 직전에는 사이트에 미리 한 번 접속**해 두세요.
 
 ## 4. 자동 시험과 운영 점검
@@ -65,6 +68,8 @@ Render 대시보드의 **medinavi** 서비스 → **Settings**에 다음 값이 
 - 실제 패키지로 서버가 켜지는지 (오타로 인한 시작 실패 방지)
 - 서버 단위 시험: 실시간 정보 정리·저장, 증상 분류 검증, 길찾기 저장, 호출 제한, 주소 검색, 규칙표 이름·표준지침 구조 검사
 - 화면 시나리오 시험: 조건 검색, 실시간 표시, 증상 추천, 출발지 주소, 실시간 실패 시 동작
+  - 가짜 화면으로 공통 스크립트를 시험하므로 요소가 단순한 `index_classic.html`로 돌리고, 기본 화면(`index.html`)은 같은 요소 id·같은 스크립트 버전을 쓰는지 따로 검사합니다. 기본 화면만의 동작(`ui_joonghee.js`)은 사이트에서 직접 확인합니다.
+  - 공통 스크립트를 고치면 두 화면의 `?v=` 숫자를 같이 올립니다 (시험이 다르면 실패).
 
 내 PC에서 직접 돌리려면 `medinavi` 폴더에서 실행합니다 (외부 접속 없이 동작).
 

@@ -9,7 +9,10 @@ const assert = require("assert");
 
 const ROOT = path.resolve(__dirname, "..", "..");
 const read = file => fs.readFileSync(path.join(ROOT, file), "utf8");
-const html = read("frontend/index.html");
+// 화면 시험은 공통 스크립트를 예전 원본 화면(index_classic.html)의 요소로 돌린다.
+// 기본 화면(index.html, 새 화면)은 같은 요소 id와 스크립트를 쓰는지 따로 검사한다.
+const html = read("frontend/index_classic.html");
+const mainHtml = read("frontend/index.html");
 const ids = [...html.matchAll(/\sid="([^"]+)"/g)].map(match => match[1]);
 const scripts = [...html.matchAll(/<script src="\/static\/([^"?]+)/g)].map(match => "frontend/" + match[1]);
 const hospitalsRaw = JSON.parse(read("data/hospitals.json").replace(/^﻿/, ""));
@@ -599,7 +602,9 @@ test("표준지침: Pre-KTAS 1·2(또는 미입력)는 중증 → 지역응급�
   const guided = page.buttonsIn("recommend-guided-list");
   assert.ok(guided.length > 0 && !els["recommend-guided"].hidden);
   assert.ok(guided.every(b => !CENTERS.includes(typeOf(page, b))));
-  assert.match(guided[0].textContent, / — (지역응급의료기관|응급실운영신고기관) \(지침: 지역응급의료센터 이상\) · 의료지도 필요/);
+  assert.match(guided[0].textContent, / — (지역응급의료기관|응급실운영신고기관) \(지침: 지역응급의료센터 이상\) · 조건 일치$/);
+  // 의료지도 필요에는 조건이 모두 일치하는 기관만 (확인 필요는 넣지 않음: 지침은 '치료 가능한' 가까운 기관)
+  assert.ok(guided.every(b => page.run(`window.medinaviJudge.checksFor(${JSON.stringify(b.dataset.hpid)})`).filter(check => check.kind !== "reference" && check.kind !== "level").every(check => check.status === "가능")));
   assert.match(els["recommend-guided-summary"].textContent, /의료지도 필요 \(\d+곳 · 지침 등급보다 낮지만 가까운 곳\)/);
   assert.match(els["recommend-status"].textContent, /의료지도 필요 \d+곳/);
   // '상위 5곳 표시'는 순위에 드는 기관이 5곳을 넘을 때만 (의료지도 필요 기관은 세지 않음)
@@ -742,6 +747,46 @@ test("나이: AI가 읽은 나이를 채우고, 나이로 소아 여부와 나�
   for (const listener of els["symptom-go"].listeners.click) await listener();
   await tick();
   assert.match(els["refine-current"].textContent, /· 나이 미상 ·/);
+});
+
+
+test("기본 화면(index.html): 공통 스크립트가 쓰는 요소와 스크립트 버전이 백업 화면과 같음", () => {
+  const mainIds = new Set([...mainHtml.matchAll(/\sid="([^"]+)"/g)].map(match => match[1]));
+  // 새 화면은 Pre-KTAS를 확인창 선택 칸 대신 홈 화면 버튼(window.medinaviPreKtas)으로 받는다.
+  const missing = ids.filter(id => !mainIds.has(id) && !["confirm-ktas", "confirm-ktas-note", "search-title"].includes(id));
+  assert.deepStrictEqual(missing, [], "기본 화면에 없는 요소: " + missing.join(", "));
+  assert.strictEqual(mainIds.size, [...mainHtml.matchAll(/\sid="([^"]+)"/g)].length, "기본 화면 요소 id가 겹쳐요");
+  // 표준지침 기준 표시 자리
+  for (const id of ["sum-age", "sum-guide", "sum-guide-main", "flag-wrap", "sum-guide-warn", "guide-banner", "guide-banner-warn", "recommend-guided-list"]) assert.ok(mainIds.has(id), id);
+  // 같은 공통 스크립트를 같은 순서·같은 버전으로 불러와야 캐시된 예전 파일이 섞이지 않는다.
+  const tags = page => [...page.matchAll(/<script src="\/static\/([^"]+)"/g)].map(match => match[1]);
+  const shared = tags(html);
+  const mainShared = tags(mainHtml).filter(src => shared.some(other => other.split("?")[0] === src.split("?")[0]));
+  assert.deepStrictEqual(mainShared, shared);
+  assert.ok(tags(mainHtml).some(src => src.startsWith("ui_joonghee.js")) && tags(mainHtml).some(src => src.startsWith("case_joonghee.js")));
+  // 예전 새 화면 주소는 기본 화면으로 보낸다.
+  assert.match(read("frontend/index_joonghee.html"), /http-equiv="refresh" content="0; url=\/"/);
+});
+
+test("화면용 요약: 적용 기준·나이·확인 항목을 구조로 알려주고 결과 뒤에 이벤트를 보냄", async () => {
+  const page = createPage({symptom: {category_id: "seizure", secondary_category_id: null, symptom_keywords: [], is_child: null, max_minutes: null, age_months: 30}});
+  await start(page);
+  const events = [];
+  page.run("document").addEventListener("medinavi-recommend-done", event => events.push(event.detail));
+  const guides = [];
+  page.run("document").addEventListener("medinavi-guide-change", event => guides.push(event.detail));
+  await searchSymptom(page, {flags: ["seizing"], age: [2, "세"]});
+  const summary = JSON.parse(JSON.stringify(guides.at(-1)));   // 시험 화면(vm) 안에서 만든 값을 바깥 값으로
+  assert.strictEqual(summary.level, "지역응급의료기관 이상");
+  assert.strictEqual(summary.ageText, "2세(소아)");
+  assert.strictEqual(summary.severity, "severe");
+  assert.deepStrictEqual(summary.guides.map(item => item.title), ["경련 중 → 가장 가까운 지역응급의료기관 이상"]);
+  assert.deepStrictEqual(summary.flags.map(flag => [flag.id, flag.checked]), [["seizing", true], ["pregnant", false]]);
+  const done = JSON.parse(JSON.stringify(events.at(-1)));
+  assert.strictEqual(done.level, "지역응급의료기관 이상");
+  assert.match(done.notes.join(" "), /항경련제/);
+  assert.strictEqual(done.counts.recommended, page.buttonsIn("recommend-results").length);
+  assert.deepStrictEqual(page.run("window.medinaviRecommend.lastResult()").level, "지역응급의료기관 이상");
 });
 
 // ---------------------------------------------------------------------------
