@@ -424,7 +424,7 @@
       ? '<span class="rank ' + tier.cls + '">' + (index + 1) + ' 참고<small>' + tier.label + '</small></span>'
       : '<span class="rank">' + (index + 1) + '<small>이동시간순</small></span>';
     // 의료지도 필요: 조건은 맞지만 지침 등급보다 낮은 기관 (표준지침: 의료지도를 받으면 가까운 기관으로 이송 가능)
-    const guidedText = tier?.id === "guided" ? (entry.reason || "").replace(/ · 의료지도 필요/, "") : "";
+    const guidedText = tier?.id === "guided" ? (entry.reason || "").replace(/ · 조건 일치$/, "") : "";
     const tierLine = tier?.id === "guided"
       ? '<li class="st-wait"><span class="mark" aria-hidden="true">△</span><span>지침 등급보다 낮은 기관' + (guidedText ? ': ' + esc(guidedText) : '') +
           ' · 의료지도를 받으면 이송할 수 있어요</span></li>'

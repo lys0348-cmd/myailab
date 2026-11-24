@@ -393,9 +393,9 @@
   // 결과 묶음 정하기 (표준지침 등급 반영)
   //  - 등급 충족: 일치 → 1~5순위 / 확인 필요 / 일부 일치 / 지금 수용 어려움 / 불일치 → 제외
   //  - 등급 확인 필요(외상센터 정보 미반영 등): 확인 필요 또는 지금 수용 어려움
-  //  - 등급 미달: 조건이 일치하거나 확인 필요면 '의료지도 필요', 아니면 제외
+  //  - 등급 미달: 조건이 모두 일치하면 '의료지도 필요' (지침: 의료지도를 받아 '치료 가능한' 가까운 기관으로), 아니면 제외
   function groupOf(entry) {
-    if (entry.level === "불가") return entry.verdict === "일치" || entry.verdict === "확인 필요" ? "guided" : "excluded";
+    if (entry.level === "불가") return entry.verdict === "일치" ? "guided" : "excluded";
     if (entry.capacity) return "busy";
     if (entry.verdict === "불일치") return "excluded";
     if (entry.level === "확인 필요") return "unknown";
@@ -518,9 +518,8 @@
       const choice = document.createElement("button");
       choice.type = "button";
       choice.dataset.hpid = hospital.hpid;
-      const unsure = checks.filter(check => check.kind !== "reference" && check.kind !== "level" && check.status !== "가능").map(window.medinaviJudge.checkText);
       choice.textContent = hospital.dutyName + " · 약 " + Math.ceil(route.duration_ms / 60000) + "분 — " + (hospital.dutyEmclsName || "구분 없음")
-        + " (지침: " + level.label + ") · 의료지도 필요" + (unsure.length ? " · " + unsure.join(", ") : "");
+        + " (지침: " + level.label + ") · 조건 일치";
       choice.onclick = () => showHospitalDetail(hospital, data, route);
       item.append(choice);
       window.medinaviCall?.attach(item, hospital);

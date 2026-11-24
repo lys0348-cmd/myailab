@@ -211,6 +211,7 @@ class SymptomParse(unittest.TestCase):
         self.assertEqual((result.category_id, result.symptom_keywords, result.is_child, result.max_minutes), ("cardiac", ["가슴 통증", "식은땀"], False, 40))
         self.assertIn("- cardiac: 흉통 · 심인성 의심", self.openai.last["instructions"])
         self.assertIn("심폐소생술 중이면 다른 증상이 있어도 cardiac_arrest 하나만", self.openai.last["instructions"])
+        self.assertIn("증상이 시작된 때를 나타내는 시간은 이동시간이 아니므로 null", self.openai.last["instructions"])
 
     def test_age_months(self):
         # 나이가 있으면 개월 수로 돌려주고 소아 여부도 나이로 정한다. 범위를 벗어나면 버린다.

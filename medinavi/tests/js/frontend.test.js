@@ -602,7 +602,9 @@ test("표준지침: Pre-KTAS 1·2(또는 미입력)는 중증 → 지역응급�
   const guided = page.buttonsIn("recommend-guided-list");
   assert.ok(guided.length > 0 && !els["recommend-guided"].hidden);
   assert.ok(guided.every(b => !CENTERS.includes(typeOf(page, b))));
-  assert.match(guided[0].textContent, / — (지역응급의료기관|응급실운영신고기관) \(지침: 지역응급의료센터 이상\) · 의료지도 필요/);
+  assert.match(guided[0].textContent, / — (지역응급의료기관|응급실운영신고기관) \(지침: 지역응급의료센터 이상\) · 조건 일치$/);
+  // 의료지도 필요에는 조건이 모두 일치하는 기관만 (확인 필요는 넣지 않음: 지침은 '치료 가능한' 가까운 기관)
+  assert.ok(guided.every(b => page.run(`window.medinaviJudge.checksFor(${JSON.stringify(b.dataset.hpid)})`).filter(check => check.kind !== "reference" && check.kind !== "level").every(check => check.status === "가능")));
   assert.match(els["recommend-guided-summary"].textContent, /의료지도 필요 \(\d+곳 · 지침 등급보다 낮지만 가까운 곳\)/);
   assert.match(els["recommend-status"].textContent, /의료지도 필요 \d+곳/);
   assert.ok(callsIn(page, "recommend-guided-list").every(Boolean), "의료지도 필요 기관에도 전화 버튼");
