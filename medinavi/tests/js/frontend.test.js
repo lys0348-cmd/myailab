@@ -334,19 +334,19 @@ test("조건 바꾸기: 직전 조건을 함께 보내고, 바뀐 항목을 알�
   for (const listener of els["symptom-go"].listeners.click) await listener();
   await tick();
   assert.ok(!els["refine-form"].hidden);
-  assert.strictEqual(els["refine-current"].textContent, "현재 조건: 흉통 · 심인성 의심 · Pre-KTAS 미입력(중증) · 소아 아님 · 300분 이내 · 지역응급의료기관");
+  assert.strictEqual(els["refine-current"].textContent, "현재 조건: 흉통 · 심인성 의심 · Pre-KTAS 미입력(중증) · 나이 미상 · 300분 이내 · 지역응급의료기관");
 
   els["refine-query"].value = "7살 아이예요";
   await els["refine-form"].listeners.submit[0]({preventDefault() {}});
   const sent = page.symptomRequests.at(-1);
-  assert.deepStrictEqual(sent, {query: "7살 아이예요", previous: {query: "가슴 통증", category_id: "cardiac", secondary_category_id: null, is_child: false, max_minutes: 300}});
+  assert.deepStrictEqual(sent, {query: "7살 아이예요", previous: {query: "가슴 통증", category_id: "cardiac", secondary_category_id: null, is_child: false, max_minutes: 300, age_months: null}});
   assert.ok(els["symptom-confirm"].open, "바뀐 조건은 확인창에서 다시 확인해요");
   assert.strictEqual(els["symptom-note"].textContent, "바뀐 항목: 소아 아니오 → 예");
   assert.strictEqual(els["rec-type"].value, "지역응급의료기관", "언급 안 한 유형은 그대로");
   assert.strictEqual(els["refine-query"].value, "");
   for (const listener of els["symptom-go"].listeners.click) await listener();
   await tick();
-  assert.match(els["refine-current"].textContent, /· 소아 ·/);
+  assert.match(els["refine-current"].textContent, /· 나이 미상\(소아\) ·/);
 
   // 다음 조건 바꾸기 때는 문장이 이어 붙어 전체 맥락이 간다.
   els["refine-query"].value = "30분 안으로";
@@ -377,7 +377,7 @@ test("AI 결과 설명: 화면의 판정·근거만 보내고, 버튼을 눌렀�
   await tick();
   const sent = page.explainRequests[0];
   const results = page.buttonsIn("recommend-results");
-  assert.strictEqual(sent.condition, "흉통 · 심인성 의심 · Pre-KTAS 미입력(중증) · 지역응급의료기관 이상 · 소아 아님 · 300분 이내 · 전체 유형");
+  assert.strictEqual(sent.condition, "흉통 · 심인성 의심 · Pre-KTAS 미입력(중증) · 지역응급의료기관 이상 · 나이 미상 · 300분 이내 · 전체 유형");
   assert.deepStrictEqual(sent.hospitals.map(h => h.rank), results.map((_, index) => index + 1));
   assert.ok(sent.hospitals[0].conditions.some(text => /심근경색 일치/.test(text)), sent.hospitals[0].conditions.join(" / "));
   assert.match(sent.hospitals[0].notice, /⚠ 병원 공지: \[\[재관류중재술\] 심근경색\] 심장내과 사정으로 CAG 불가능/);
@@ -431,7 +431,7 @@ test("두 분류: 모두 일치가 없으면 일부 일치 묶음과 한 분류�
   const results = page.buttonsIn("recommend-results");
   assert.ok(results.length > 0 && results.every(b => page.realtime.hospitals[b.dataset.hpid].illness[0].status === "가능"));
   assert.ok(els["recommend-partial"].hidden && els["recommend-fallback"].hidden);
-  assert.match(els["refine-current"].textContent, /현재 조건: 흉통 · 심인성 의심 · Pre-KTAS 미입력\(중증\) · 소아 아님/);
+  assert.match(els["refine-current"].textContent, /현재 조건: 흉통 · 심인성 의심 · Pre-KTAS 미입력\(중증\) · 나이 미상/);
 });
 
 test("병원 상세: 추가 확인 사항에 전화 확인, 검색 조건 확인 필요, 공지, 이동시간 한계", async () => {
@@ -571,12 +571,13 @@ async function checkFlag(page, id, on = true) {
   await box.fire("change");
 }
 const typeOf = (page, button) => page.hospitals.items.find(item => item.hpid === button.dataset.hpid).dutyEmclsName;
-async function searchSymptom(page, {ktas = "", flags = [], minutes = "300", child = false} = {}) {
+async function searchSymptom(page, {ktas = "", flags = [], minutes = "300", child = false, age = null} = {}) {
   const {els} = page;
   els["symptom-query"].value = "증상";
   await els["symptom-search"].listeners.submit[0]({preventDefault() {}});
   els["confirm-ktas"].value = ktas;
   els["confirm-child"].checked = child;
+  if (age) await setAge(page, ...age);
   await els["confirm-ktas"].fire("change");
   for (const flag of flags) await checkFlag(page, flag);
   els["rec-minutes"].value = minutes;
@@ -685,6 +686,57 @@ test("표준지침: 중증외상은 권역외상센터, 정보가 없으면 확�
   await searchSymptom(near, {ktas: "3"});
   assert.match(near.els["confirm-required"].textContent, /지침: 경증 외상 → 가장 가까운 지역응급의료기관/);
   assert.ok(near.buttonsIn("recommend-results").length > 0);
+});
+
+
+async function setAge(page, value, unit = "세") {
+  page.els["confirm-age"].value = String(value);
+  page.els["confirm-age-unit"].value = unit;
+  await page.els["confirm-age"].fire("input");
+}
+
+test("나이: AI가 읽은 나이를 채우고, 나이로 소아 여부와 나이별 기준(생후 3개월 미만 발열)을 정함", async () => {
+  const page = createPage({symptom: sent => sent.previous ? {category_id: "fever", secondary_category_id: null, symptom_keywords: [], is_child: null, max_minutes: null, age_months: null}
+    : {category_id: "fever", secondary_category_id: null, symptom_keywords: [], is_child: true, max_minutes: null, age_months: 2}});
+  await start(page);
+  const {els, hospitals} = page;
+  els["symptom-query"].value = "생후 2개월 아기가 열이 38도예요";
+  await els["symptom-search"].listeners.submit[0]({preventDefault() {}});
+  assert.strictEqual(els["confirm-age"].value, "2");
+  assert.strictEqual(els["confirm-age-unit"].value, "개월");
+  assert.ok(els["confirm-child"].checked && els["confirm-child"].disabled, "나이가 있으면 소아 여부는 자동");
+  assert.deepStrictEqual(flagLabels(page), ["소아: 미숙아로 태어나는 등 과거력 있음"]);
+  assert.match(els["confirm-required"].textContent, /지침: 생후 3개월 미만 발열 → 소아 진료가 가능한 지역응급의료기관 이상 \(표준지침 p\.264, 소아 p\.316\) · 모두 가능해야 일치: 소아청소년과/);
+  els["rec-minutes"].value = "300";
+  for (const listener of els["symptom-go"].listeners.click) await listener();
+  await tick();
+  const results = page.buttonsIn("recommend-results");
+  assert.ok(results.length > 0 && results.every(b => hospitals.items.find(item => item.hpid === b.dataset.hpid).departments.includes("소아청소년과")));
+  assert.match(els["refine-current"].textContent, /· 생후 2개월 ·/);
+  assert.match(els["recommend-notice"].textContent, /평소 다니는 병원.*선택 사항이에요/);
+  // 조건 바꾸기: 나이를 함께 보내고, 언급이 없으면 나이를 그대로 둔다.
+  els["refine-query"].value = "30분 안으로";
+  await els["refine-form"].listeners.submit[0]({preventDefault() {}});
+  assert.strictEqual(page.symptomRequests.at(-1).previous.age_months, 2);
+  assert.strictEqual(els["confirm-age"].value, "2");
+  // 5세로 바꾸면 3개월 기준은 빠지고 일반 발열 기준, 소아 표시는 그대로
+  await setAge(page, 5);
+  assert.ok(els["confirm-child"].checked);
+  assert.match(els["confirm-required"].textContent, /지침: 중증 → 지역응급의료센터 이상/);
+  // 과거력(미숙아 등) 체크 → 소아 진료 가능 기관
+  await checkFlag(page, "preterm_history");
+  assert.match(els["confirm-required"].textContent, /지침: 과거력\(미숙아 등\) 있는 소아 발열 → 소아 진료가 가능한/);
+  // 40세 성인: 소아 아님, 과거력 체크가 있어도 소아 기준은 쓰지 않는다.
+  await setAge(page, 40);
+  assert.ok(!els["confirm-child"].checked && els["confirm-child"].disabled);
+  assert.match(els["confirm-required"].textContent, /지침: 중증 → 지역응급의료센터 이상/);
+  // 나이를 지우면 체크박스로 고를 수 있다.
+  els["confirm-age"].value = "";
+  await els["confirm-age"].fire("input");
+  assert.ok(!els["confirm-child"].disabled);
+  for (const listener of els["symptom-go"].listeners.click) await listener();
+  await tick();
+  assert.match(els["refine-current"].textContent, /· 나이 미상 ·/);
 });
 
 // ---------------------------------------------------------------------------

@@ -38,6 +38,9 @@
   // 추가(표준지침): Pre-KTAS 선택 칸(기본 화면)과 분류별 체크 항목
   const ktasSelect = $("#confirm-ktas");
   const flagsBox = $("#confirm-flags");
+  // 추가: 환자 나이 직접 입력 (숫자 + 세/개월). 나이가 있으면 소아 여부는 나이로 정하고, 없으면 '소아' 체크박스를 쓴다.
+  const ageInput = $("#confirm-age");
+  const ageUnit = $("#confirm-age-unit");
   const fallbackBox = $("#recommend-fallback");
   const explainArea = $("#explain-area");
   const explainButton = $("#explain-button");
@@ -97,13 +100,53 @@
   }
 
   // 분류에 맞는 기준 하나: when(중증도·체크 항목·소아)이 모두 맞는 첫 기준
-  function variantOf(selected, {ktas = "", flags = new Set(), isChild = false} = {}) {
+  function variantOf(selected, {ktas = "", flags = new Set(), isChild = false, ageMonths = null} = {}) {
     const severity = selected.severity_fixed || severityOf(ktas);
     const variants = selected.variants || [{title: selected.label, level: "any", required: selected.required, required_any: selected.required_any, reference: selected.reference}];
     return variants.find(variant => {
       const when = variant.when || {};
-      return (!when.severity || when.severity === severity) && (!when.flag || flags.has(when.flag)) && (!when.child || isChild);
+      return (!when.severity || when.severity === severity) && (!when.flag || flags.has(when.flag)) && (!when.child || isChild)
+        && (when.age_months_lt == null || (ageMonths != null && ageMonths < when.age_months_lt));
     }) || variants[variants.length - 1];
+  }
+
+  // ---- 나이 ----------------------------------------------------------------
+  // 입력한 나이를 개월 수로 (비어 있거나 잘못되면 null)
+  function ageMonthsNow() {
+    const raw = String(ageInput?.value ?? "").trim();
+    if (!raw) return null;
+    const value = Number(raw);
+    if (!Number.isFinite(value) || value < 0) return null;
+    const months = Math.floor(ageUnit?.value === "개월" ? value : value * 12);
+    return months <= 1500 ? months : null;
+  }
+  const childLimit = () => rules?.age?.child_under_months || 216;
+  function isChildNow() {
+    const months = ageMonthsNow();
+    return months != null ? months < childLimit() : childBox.checked;
+  }
+  // 나이가 있으면 '소아' 체크박스를 나이에 맞춰 자동으로 정하고 잠근다.
+  function syncChild() {
+    const months = ageMonthsNow();
+    if (months != null) childBox.checked = months < childLimit();
+    childBox.disabled = months != null;
+  }
+  function setAge(months) {
+    if (!ageInput) return;
+    if (months == null) {
+      ageInput.value = "";
+      if (ageUnit) ageUnit.value = "세";
+    } else if (months < 24 && ageUnit) {
+      ageInput.value = String(months);
+      ageUnit.value = "개월";
+    } else {
+      ageInput.value = String(Math.floor(months / 12));
+      if (ageUnit) ageUnit.value = "세";
+    }
+  }
+  function ageText(months, isChild) {
+    if (months == null) return isChild ? "나이 미상(소아)" : "나이 미상";
+    return months < 24 ? "생후 " + months + "개월" : Math.floor(months / 12) + "세" + (months < childLimit() ? "(소아)" : "");
   }
 
   function levelInfo(id) {
@@ -160,7 +203,7 @@
     flagsBox.hidden = seen.size === 0;
   }
   function dialogContext() {
-    return {ktas: currentKtas(), flags: checkedFlags(), isChild: childBox.checked};
+    return {ktas: currentKtas(), flags: checkedFlags(), isChild: isChildNow(), ageMonths: ageMonthsNow()};
   }
 
   function fillTypes() {
@@ -243,6 +286,9 @@
       ? "AI가 참고한 표현: " + parsed.symptom_keywords.map(word => "'" + word + "'").join(", ")
       : "AI가 참고한 표현 없음";
     childBox.checked = parsed ? parsed.is_child === true : fallback?.is_child === true;
+    // 나이: AI가 문장에서 읽은 값(없으면 직전 조건의 나이). 새 검색에서 나이가 없으면 비운다.
+    setAge(parsed ? (parsed.age_months ?? (fallback ? fallback.age_months ?? null : null)) : fallback?.age_months ?? null);
+    syncChild();
     const minutes = parsed?.max_minutes || fallback?.max_minutes;
     if (minutes) minutesInput.value = minutes;
     if (fallback) typeSelect.value = fallback.type || "";
@@ -259,19 +305,20 @@
   }
 
   function conditionText(condition) {
-    return [labelOf(selectedIds(condition.category_id, condition.secondary_category_id)), shortSeverity(condition.ktas), condition.is_child ? "소아" : "소아 아님",
+    return [labelOf(selectedIds(condition.category_id, condition.secondary_category_id)), shortSeverity(condition.ktas), ageText(condition.age_months ?? null, condition.is_child),
       condition.max_minutes + "분 이내", condition.type || "전체 유형"].join(" · ");
   }
 
   // 직전 조건과 확인창 값을 비교해 바뀐 항목을 알려준다.
   function describeChanges(before) {
-    const after = {category_id: categorySelect.value, secondary_category_id: categorySelect2.value, is_child: childBox.checked, max_minutes: Number(minutesInput.value), ktas: currentKtas()};
+    const after = {category_id: categorySelect.value, secondary_category_id: categorySelect2.value, is_child: isChildNow(), max_minutes: Number(minutesInput.value), ktas: currentKtas(), age_months: ageMonthsNow()};
     const changes = [];
     if ((after.ktas || "") !== (before.ktas || "")) changes.push("Pre-KTAS " + (before.ktas || "미입력") + " → " + (after.ktas || "미입력"));
     const beforeLabel = labelOf(selectedIds(before.category_id, before.secondary_category_id));
     const afterLabel = labelOf(selectedIds(after.category_id, after.secondary_category_id));
     if (beforeLabel !== afterLabel) changes.push("증상 분류 " + beforeLabel + " → " + afterLabel);
-    if (after.is_child !== Boolean(before.is_child)) changes.push("소아 " + (before.is_child ? "예" : "아니오") + " → " + (after.is_child ? "예" : "아니오"));
+    if ((after.age_months ?? null) !== (before.age_months ?? null)) changes.push("나이 " + ageText(before.age_months ?? null, before.is_child) + " → " + ageText(after.age_months, after.is_child));
+    else if (after.is_child !== Boolean(before.is_child)) changes.push("소아 " + (before.is_child ? "예" : "아니오") + " → " + (after.is_child ? "예" : "아니오"));
     if (after.max_minutes !== before.max_minutes) changes.push("이동시간 " + before.max_minutes + "분 → " + after.max_minutes + "분");
     return changes.length ? "바뀐 항목: " + changes.join(", ") : "바뀐 항목이 없어요. 직전 조건 그대로예요. 필요하면 아래에서 직접 고쳐 주세요.";
   }
@@ -331,7 +378,7 @@
     return {"일치": "recommended", "확인 필요": "unknown", "일부 일치": "partial"}[entry.verdict];
   }
 
-  async function recommend(ids, isChild, maxMinutes, type, ktas = "", flags = []) {
+  async function recommend(ids, isChild, maxMinutes, type, ktas = "", flags = [], ageMonths = null) {
     document.dispatchEvent(new CustomEvent("medinavi-search", {detail: "recommend"}));
     clearArea();
     area.hidden = false;
@@ -343,7 +390,7 @@
     }
     const controller = new AbortController();
     request = controller;
-    const context = {ktas, flags: new Set(flags), isChild};
+    const context = {ktas, flags: new Set(flags), isChild, ageMonths};
     const variants = ids.map(id => variantOf(category(id), context));
     const level = strictestLevel(variants);
     const fixed = ids.every(id => category(id).severity_fixed);
@@ -503,7 +550,7 @@
         retry.textContent = category(id).label + "만 적용해서 다시 찾기";
         retry.onclick = () => {
           lastCondition = {...lastCondition, category_id: id, secondary_category_id: null};
-          recommend([id], isChild, maxMinutes, type, ktas, flags);
+          recommend([id], isChild, maxMinutes, type, ktas, flags, ageMonths);
         };
         fallbackBox.append(retry);
       }
@@ -515,7 +562,7 @@
     const clip = (text, length) => String(text || "").slice(0, length);
     const checkText = window.medinaviJudge.checkText;
     explainPayload = {
-      condition: clip([selectedLabel, level.label, isChild ? "소아" : "소아 아님", maxMinutes + "분 이내", type || "전체 유형"].join(" · "), 200),
+      condition: clip([selectedLabel, level.label, ageText(ageMonths, isChild), maxMinutes + "분 이내", type || "전체 유형"].join(" · "), 200),
       hospitals: recommended.map((entry, index) => ({
         rank: index + 1,
         name: clip(entry.hospital.dutyName, 80),
@@ -583,6 +630,10 @@
   // Pre-KTAS·소아 여부가 바뀌면 적용 기준(중증/경증, 소아 기준)도 다시 보여준다.
   ktasSelect?.addEventListener("change", describeRequired);
   childBox.addEventListener("change", describeRequired);
+  const onAge = () => { syncChild(); describeRequired(); };
+  ageInput?.addEventListener("input", onAge);
+  ageInput?.addEventListener("change", onAge);
+  ageUnit?.addEventListener("change", onAge);
   $("#symptom-edit").addEventListener("click", () => {
     dialog.close();
     input.focus();
@@ -597,8 +648,10 @@
     const ids = selectedIds();
     const ktas = currentKtas();
     const flags = [...checkedFlags()];
-    lastCondition = {query: pendingQuery, category_id: ids[0], secondary_category_id: ids[1] || null, is_child: childBox.checked, max_minutes: maxMinutes, type: typeSelect.value, ktas, flags};
-    recommend(ids, childBox.checked, maxMinutes, typeSelect.value, ktas, flags);
+    const ageMonths = ageMonthsNow();
+    const isChild = isChildNow();
+    lastCondition = {query: pendingQuery, category_id: ids[0], secondary_category_id: ids[1] || null, is_child: isChild, max_minutes: maxMinutes, type: typeSelect.value, ktas, flags, age_months: ageMonths};
+    recommend(ids, isChild, maxMinutes, typeSelect.value, ktas, flags, ageMonths);
   });
 
   explainButton.addEventListener("click", async () => {
@@ -641,7 +694,7 @@
     const before = lastCondition;
     let parsed = null;
     try {
-      const previous = {query: before.query.slice(-300), category_id: before.category_id, secondary_category_id: before.secondary_category_id || null, is_child: before.is_child, max_minutes: before.max_minutes};
+      const previous = {query: before.query.slice(-300), category_id: before.category_id, secondary_category_id: before.secondary_category_id || null, is_child: before.is_child, max_minutes: before.max_minutes, age_months: before.age_months ?? null};
       const response = await fetch("/api/symptom/parse", {method: "POST", headers: {"Content-Type": "application/json"}, body: JSON.stringify({query: change, previous})});
       const body = await response.json().catch(() => null);
       if (!response.ok || !body) throw new Error(typeof body?.detail === "string" ? body.detail : "서버를 준비하고 있어요.");

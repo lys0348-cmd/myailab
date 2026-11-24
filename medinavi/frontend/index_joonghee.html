@@ -468,7 +468,14 @@ details.why li { display:list-item }
     </div>
     <!-- 추가(표준지침 2023): 분류별 확인 항목 (symptom-recommend.js가 채움) -->
     <div id="confirm-flags" hidden></div>
-    <p><label><input type="checkbox" id="confirm-child"> 소아 환자 (만 18세 미만)</label></p>
+    <!-- 추가: 환자 나이 직접 입력 (symptom-recommend.js가 AI 값으로 채움) -->
+    <p>
+          <label for="confirm-age">환자 나이</label><br>
+          <input id="confirm-age" type="number" min="0" max="125" step="1" inputmode="numeric" placeholder="모르면 비워 두기" style="width:8em">
+          <select id="confirm-age-unit" aria-label="나이 단위"><option value="세">세</option><option value="개월">개월</option></select>
+          <small>생후 24개월 미만은 '개월'로 적어 주세요. 나이별 지침 기준(예: 생후 3개월 미만 발열)에 쓰여요.</small><br>
+          <label><input type="checkbox" id="confirm-child"> 나이를 모를 때: 소아(만 18세 미만)로 보기</label> <small>나이를 입력하면 자동으로 정해져요</small>
+      </p>
     <p id="confirm-keywords"></p>
     <p id="confirm-required"></p>
   </div>
@@ -725,7 +732,7 @@ details.why li { display:list-item }
 <script src="/static/hospital-route-view.js?v=4"></script>
 <script src="/static/origin-search.js?v=1"></script>
 <script src="/static/realtime.js?v=7"></script>
-<script src="/static/symptom-recommend.js?v=10"></script>
+<script src="/static/symptom-recommend.js?v=11"></script>
 <!-- 추가: 작업 건·연락 기록 (이 탭에만 임시 저장) / 시안 화면 전환·카드 -->
 <script src="/static/case_joonghee.js?v=3"></script>
 <script src="/static/ui_joonghee.js?v=29"></script>

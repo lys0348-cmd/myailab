@@ -82,6 +82,7 @@ class HospitalsAndRules(unittest.TestCase):
         self.assertEqual(types - set(rules["facility_ranks"]), set(), "등급표에 없는 기관 유형이 있어요")
         self.assertTrue(rules["pre_ktas"]["enabled"])
         self.assertEqual(rules["pre_ktas"]["severe_levels"], [1, 2])
+        self.assertEqual(rules["age"]["child_under_months"], 216)
         ids = [category["id"] for category in rules["categories"]]
         self.assertNotIn("pediatric", ids)
         for category in rules["categories"]:
@@ -92,15 +93,16 @@ class HospitalsAndRules(unittest.TestCase):
                 self.assertIn(variant["level"], levels, name)
                 self.assertTrue(variant["title"], name)
                 when = variant.get("when", {})
-                self.assertLessEqual(set(when), {"severity", "flag", "child"}, name)
+                self.assertLessEqual(set(when), {"severity", "flag", "child", "age_months_lt"}, name)
                 self.assertIn(when.get("severity", "severe"), ("severe", "mild"), name)
                 if "flag" in when:
                     self.assertIn(when["flag"], flags, name)
             # 체크 항목 없이 중증·경증(성인) 모두 맞는 기준이 있어야 한다.
             for severity in ("severe", "mild"):
                 effective = category.get("severity_fixed", severity)
+                plain = lambda when: "flag" not in when and not when.get("child") and "age_months_lt" not in when
                 matched = [variant for variant in category["variants"]
-                           if variant.get("when", {}).get("severity", effective) == effective and "flag" not in variant.get("when", {}) and not variant.get("when", {}).get("child")]
+                           if variant.get("when", {}).get("severity", effective) == effective and plain(variant.get("when", {}))]
                 self.assertTrue(matched, f"{name} {severity}")
             if category.get("excluded"):
                 self.assertTrue(category.get("exclusion_reason"), name)
@@ -204,19 +206,32 @@ class SymptomParse(unittest.TestCase):
         return run(self.app.app.routes["/api/symptom/parse"](FakeRequest(), self.app.SymptomRequest(query=query)))
 
     def test_valid_and_filtered(self):
-        result = self.parse({"category_id": "cardiac", "secondary_category_id": None, "symptom_keywords": ["가슴 통증", "식은땀", "심근경색"], "is_child": False, "max_minutes": 40},
+        result = self.parse({"category_id": "cardiac", "secondary_category_id": None, "symptom_keywords": ["가슴 통증", "식은땀", "심근경색"], "is_child": False, "max_minutes": 40, "age_months": None},
                             "70대 남성 가슴 통증과 식은땀, 40분 안에")
         self.assertEqual((result.category_id, result.symptom_keywords, result.is_child, result.max_minutes), ("cardiac", ["가슴 통증", "식은땀"], False, 40))
         self.assertIn("- cardiac: 흉통 · 심인성 의심", self.openai.last["instructions"])
         self.assertIn("심폐소생술 중이면 다른 증상이 있어도 cardiac_arrest 하나만", self.openai.last["instructions"])
 
+    def test_age_months(self):
+        # 나이가 있으면 개월 수로 돌려주고 소아 여부도 나이로 정한다. 범위를 벗어나면 버린다.
+        out = lambda age, child: {"category_id": "fever", "secondary_category_id": None, "symptom_keywords": [], "is_child": child, "max_minutes": None, "age_months": age}
+        self.assertEqual((lambda r: (r.age_months, r.is_child))(self.parse(out(2, None), "생후 2개월 아기 열")), (2, True))
+        self.assertEqual((lambda r: (r.age_months, r.is_child))(self.parse(out(840, True), "70대 고열")), (840, False))
+        self.assertEqual((lambda r: (r.age_months, r.is_child))(self.parse(out(-3, True), "아이 열")), (None, True))
+        self.assertIn("나이를 추측하지 않는다", self.openai.last["instructions"])
+        previous = self.app.PreviousCondition(query="생후 2개월 아기 열", category_id="fever", is_child=True, max_minutes=60, age_months=2)
+        self.openai.output = out(None, None)
+        result = run(self.app.app.routes["/api/symptom/parse"](FakeRequest(), self.app.SymptomRequest(query="30분 안으로", previous=previous)))
+        self.assertEqual((result.age_months, result.is_child), (2, True), "언급 안 된 나이는 유지해요")
+        self.assertIn("직전 나이(개월): 2", self.openai.last["input"])
+
     def test_invalid_values(self):
-        result = self.parse({"category_id": "heart", "secondary_category_id": None, "symptom_keywords": [], "is_child": None, "max_minutes": 0}, "어지러움")
+        result = self.parse({"category_id": "heart", "secondary_category_id": None, "symptom_keywords": [], "is_child": None, "max_minutes": 0, "age_months": None}, "어지러움")
         self.assertEqual((result.category_id, result.max_minutes), ("unclear", None))
 
     def test_refine_keeps_previous(self):
         previous = self.app.PreviousCondition(query="교통사고로 다리를 다쳤어요", category_id="trauma", secondary_category_id=None, is_child=None, max_minutes=60)
-        self.openai.output = {"category_id": "trauma", "secondary_category_id": None, "symptom_keywords": ["교통사고", "7살", "없는말"], "is_child": True, "max_minutes": None}
+        self.openai.output = {"category_id": "trauma", "secondary_category_id": None, "symptom_keywords": ["교통사고", "7살", "없는말"], "is_child": True, "max_minutes": None, "age_months": None}
         result = run(self.app.app.routes["/api/symptom/parse"](FakeRequest(), self.app.SymptomRequest(query="7살 아이예요", previous=previous)))
         self.assertEqual((result.category_id, result.is_child, result.max_minutes), ("trauma", True, 60), "언급 안 된 시간은 유지해야 해요")
         self.assertEqual(result.symptom_keywords, ["교통사고", "7살"])
@@ -225,7 +240,7 @@ class SymptomParse(unittest.TestCase):
         self.assertIn("언급되지 않은 항목은 직전 조건 값을", self.openai.last["instructions"])
 
     def test_secondary_category(self):
-        out = lambda primary, secondary: {"category_id": primary, "secondary_category_id": secondary, "symptom_keywords": [], "is_child": None, "max_minutes": None}
+        out = lambda primary, secondary: {"category_id": primary, "secondary_category_id": secondary, "symptom_keywords": [], "is_child": None, "max_minutes": None, "age_months": None}
         self.assertEqual(self.parse(out("trauma", "burn"), "교통사고와 화상").secondary_category_id, "burn")
         for primary, secondary in [("trauma", "trauma"), ("trauma", "unclear"), ("unclear", "burn"), ("trauma", "fire"), ("abdominal", "pediatric")]:
             self.assertIsNone(self.parse(out(primary, secondary), "문장").secondary_category_id, (primary, secondary))

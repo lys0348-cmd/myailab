@@ -3,7 +3,7 @@
   "status": "표준지침(2023) 기준 · 강원 지침 확인 전",
   "notice": "참고용 정보예요. 「119구급대원 현장응급처치 표준지침(2023 개정본)」의 이송병원 선정 기준을 공공데이터로 확인할 수 있는 범위에서 옮긴 것이고, 지역 이송지침이 있으면 그것이 우선이에요. 최종 판단은 구급대원·의료진이 해야 해요.",
   "source": "소방청, 119구급대원 현장응급처치 표준지침 2023년 개정본 (쪽수는 지침 본문 기준)",
-  "how_to_edit": "분류마다 variants를 위에서부터 보고 when이 맞는 첫 항목을 적용한다. when.severity(severe: Pre-KTAS 1·2 또는 미입력, mild: 3~5), when.flag(확인창의 체크 항목), when.child(소아)가 모두 맞아야 한다. when이 없으면 항상 맞는다. level은 levels의 id, required(모두 가능해야), required_any(하나 이상), reference(근거 표시만). 이름은 /api/realtime 항목 이름(활용가이드 V13)과 hospitals.json 진료과목 이름을 그대로 쓴다. 신뢰할 수 있는 데이터가 없는 조건은 넣지 않고, 그런 조건이 핵심인 분류는 excluded:true로 일반 기준만 적용한다.",
+  "how_to_edit": "분류마다 variants를 위에서부터 보고 when이 맞는 첫 항목을 적용한다. when.severity(severe: Pre-KTAS 1·2 또는 미입력, mild: 3~5), when.flag(확인창의 체크 항목), when.child(소아: 나이 216개월 미만 또는 나이를 모를 때 소아 체크), when.age_months_lt(입력한 나이가 이 개월 수 미만)가 모두 맞아야 한다. when이 없으면 항상 맞는다. level은 levels의 id, required(모두 가능해야), required_any(하나 이상), reference(근거 표시만). 이름은 /api/realtime 항목 이름(활용가이드 V13)과 hospitals.json 진료과목 이름을 그대로 쓴다. 신뢰할 수 있는 데이터가 없는 조건은 넣지 않고, 그런 조건이 핵심인 분류는 excluded:true로 일반 기준만 적용한다.",
   "levels": [
     {
       "id": "any",
@@ -326,17 +326,31 @@
       "severe_signs": "발열과 함께 저혈압 또는 다른 장기부전 증상",
       "flags": [
         {
-          "id": "infant_risk",
-          "label": "소아: 3개월 미만 영아이거나 미숙아 등 과거력 있음"
+          "id": "preterm_history",
+          "label": "소아: 미숙아로 태어나는 등 과거력 있음"
         }
       ],
       "child_note": "평소 다니는 병원(암·장기이식·만성질환·미숙아 진료)이 있고 지금 열과 관계있으면 그 병원 응급실도 고려하세요. 선택 사항이에요 (표준지침 p.316).",
       "variants": [
         {
-          "title": "고위험 소아 발열 → 소아 진료가 가능한 지역응급의료기관 이상",
+          "title": "생후 3개월 미만 발열 → 소아 진료가 가능한 지역응급의료기관 이상",
           "level": "local_institution",
           "when": {
-            "flag": "infant_risk"
+            "age_months_lt": 3
+          },
+          "required": [
+            {
+              "type": "department",
+              "name": "소아청소년과"
+            }
+          ]
+        },
+        {
+          "title": "과거력(미숙아 등) 있는 소아 발열 → 소아 진료가 가능한 지역응급의료기관 이상",
+          "level": "local_institution",
+          "when": {
+            "flag": "preterm_history",
+            "child": true
           },
           "required": [
             {
@@ -863,5 +877,9 @@
     }
   ],
   "common_required_note": "모든 환자 공통 수용 조건: 응급실 일반 병상 가용 1 이상 (0 이하면 '지금 수용 어려움'으로 따로 보여줌)",
-  "ranking": "표준지침(2023)의 분류·중증도별 기관 등급과 수용 조건(중증질환·병상·수술실·장비)을 충족한 병원을 예상 이동시간 순으로 보여준다. 등급만 낮은 가까운 기관은 '의료지도 필요'로 따로 보여준다."
+  "ranking": "표준지침(2023)의 분류·중증도별 기관 등급과 수용 조건(중증질환·병상·수술실·장비)을 충족한 병원을 예상 이동시간 순으로 보여준다. 등급만 낮은 가까운 기관은 '의료지도 필요'로 따로 보여준다.",
+  "age": {
+    "child_under_months": 216,
+    "note": "나이는 확인창에 직접 입력한다(AI는 문장에 나온 나이만 채움). 만 18세(216개월) 미만이면 소아로 보고 소아청소년과·응급실 소아를 참고로 표시한다. 나이별 기준은 variants의 when.age_months_lt(개월 수 미만)로 적는다. 나이를 모르면 '소아' 체크박스로 소아 여부만 고른다."
+  }
 }

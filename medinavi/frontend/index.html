@@ -115,7 +115,14 @@ details.realtime-status summary { cursor:pointer }
         </p>
         <!-- 추가(표준지침 2023): 분류별 확인 항목 (예: ST분절 상승, 지금도 경련 중, 만삭 분만) -->
         <div id="confirm-flags" hidden></div>
-        <p><label><input type="checkbox" id="confirm-child"> 소아 환자 (만 18세 미만)</label></p>
+        <!-- 추가: 환자 나이 직접 입력. AI는 문장에 나온 나이만 채운다. -->
+        <p>
+            <label for="confirm-age">환자 나이</label><br>
+            <input id="confirm-age" type="number" min="0" max="125" step="1" inputmode="numeric" placeholder="모르면 비워 두기" style="width:8em">
+            <select id="confirm-age-unit" aria-label="나이 단위"><option value="세">세</option><option value="개월">개월</option></select>
+            <small>생후 24개월 미만은 '개월'로 적어 주세요. 나이별 지침 기준(예: 생후 3개월 미만 발열)에 쓰여요.</small><br>
+            <label><input type="checkbox" id="confirm-child"> 나이를 모를 때: 소아(만 18세 미만)로 보기</label> <small>나이를 입력하면 자동으로 정해져요</small>
+        </p>
         <p id="confirm-required"></p>
         <p>
             <label for="rec-minutes">최대 예상 이동시간(분)</label><br>
@@ -251,7 +258,7 @@ details.realtime-status summary { cursor:pointer }
 <!-- 추가: 실시간 병상·중증질환 수용 가능 정보 -->
 <script src="/static/realtime.js?v=7"></script>
 <!-- 추가: 증상 기반 추천 (임시 규칙표 · 자문 전) -->
-<script src="/static/symptom-recommend.js?v=10"></script>
+<script src="/static/symptom-recommend.js?v=11"></script>
 <!-- 웹 지도용 공개 Client ID만 사용한다. -->
 <script src="https://oapi.map.naver.com/openapi/v3/maps.js?ncpKeyId=qbtbo9ux4q" onload="showMap()" onerror="mapError()"></script>
 </html>
