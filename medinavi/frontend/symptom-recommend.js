@@ -521,7 +521,7 @@
 
     const summary = [
       selectedLabel,
-      "예상 " + maxMinutes + "분 이내 " + (ids.length > 1 ? "모두 일치 " : "조건 일치 ") + recommended.length + "곳" + (within.filter(e => e.verdict === "일치").length > 5 ? " (상위 5곳 표시)" : ""),
+      "예상 " + maxMinutes + "분 이내 " + (ids.length > 1 ? "모두 일치 " : "조건 일치 ") + recommended.length + "곳" + (within.filter(e => e.group === "recommended").length > 5 ? " (상위 5곳 표시)" : ""),
       partial.length && "일부 일치 " + partial.length + "곳",
       guided.length && "의료지도 필요 " + guided.length + "곳",
       busy.length && "지금 수용 어려움 " + busy.length + "곳",
