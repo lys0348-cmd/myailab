@@ -153,6 +153,13 @@ function renderDetailChecks(hospital) {
   const judge = window.medinaviJudge;
   for (const check of judge?.checksFor(hospital.hpid) || []) {
     if (check.kind === "reference" || check.status === "가능") continue;
+    // 추가(표준지침): 기관 등급은 따로 풀어 쓴다.
+    if (check.kind === "level") {
+      items.push(check.status === "불가"
+        ? "표준지침 기본 등급(" + check.name + ")보다 낮은 기관이에요(" + check.detail + "). 지역 여건에 따라 의료지도를 받으면 이송할 수 있어요."
+        : "기관 등급(" + check.name + ")을 확인하지 못했어요(" + check.detail + ").");
+      continue;
+    }
     items.push("검색 조건 '" + check.name + "': " + judge.checkText(check));
   }
   if (!(hospital.departments || []).length || hospital.departments_status === "확인 필요") {

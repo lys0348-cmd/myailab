@@ -22,6 +22,8 @@
       : "미입력 · 고르지 않아도 검색할 수 있어요";
     $("#ktas-warn").hidden = !(k && Number(k.level) <= 2);
   }
+  // 추가(표준지침 2023): 증상 추천(symptom-recommend.js)이 이 화면의 Pre-KTAS로 중증/경증 기준을 고른다.
+  window.medinaviPreKtas = () => Case.ktasNow()?.level || "";
   for (const button of ktasButtons) {
     button.addEventListener("click", () => {
       const now = Case.ktasNow()?.level || "";
@@ -312,6 +314,7 @@
   const MAX_CARDS = 5;
   // 순위에 들지 못한 기관도 빼지 않고 이름표를 달아 5장까지 채운다 (교수님 피드백: 확인 필요 기관은 아래에 표시).
   const TIERS = [
+    {id: "guided", list: "#recommend-guided-list", label: "의료지도 필요", cls: "t-partial"},
     {id: "partial", list: "#recommend-partial-list", label: "일부 조건 일치", cls: "t-partial"},
     {id: "unknown", list: "#recommend-unknown-list", label: "조건 확인 필요", cls: "t-unknown"},
     {id: "capacity", list: "#recommend-capacity-list", label: "지금 수용 어려움", cls: "t-busy"},
