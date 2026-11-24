@@ -607,6 +607,8 @@ test("표준지침: Pre-KTAS 1·2(또는 미입력)는 중증 → 지역응급�
   assert.ok(guided.every(b => page.run(`window.medinaviJudge.checksFor(${JSON.stringify(b.dataset.hpid)})`).filter(check => check.kind !== "reference" && check.kind !== "level").every(check => check.status === "가능")));
   assert.match(els["recommend-guided-summary"].textContent, /의료지도 필요 \(\d+곳 · 지침 등급보다 낮지만 가까운 곳\)/);
   assert.match(els["recommend-status"].textContent, /의료지도 필요 \d+곳/);
+  // '상위 5곳 표시'는 순위에 드는 기관이 5곳을 넘을 때만 (의료지도 필요 기관은 세지 않음)
+  if (results.length < 5) assert.doesNotMatch(els["recommend-status"].textContent, /상위 5곳 표시/);
   assert.ok(callsIn(page, "recommend-guided-list").every(Boolean), "의료지도 필요 기관에도 전화 버튼");
   assert.match(els["recommend-notice"].textContent, /적용 기준: 중증 호흡곤란 → 지역응급의료센터 이상/);
   // 상세 '추가 확인 사항'에 등급 설명
@@ -683,6 +685,9 @@ test("표준지침: 중증외상은 권역외상센터, 정보가 없으면 확�
   assert.match(far.els["recommend-notice"].textContent, /^🚁 권역외상센터까지 약 \d+분 · 37\.5km\. 표준지침 p\.54, p\.325/);
   // 외상센터가 아닌 가까운 기관은 '의료지도 필요'로
   assert.ok(far.buttonsIn("recommend-guided-list").length > 0);
+  // 순위는 1곳뿐이므로 '상위 5곳 표시'를 붙이지 않는다 (의료지도 필요 기관은 세지 않음)
+  assert.strictEqual(ranked.length, 1);
+  assert.match(far.els["recommend-status"].textContent, /조건 일치 1곳 · 의료지도 필요 \d+곳/);
   // 3) 가까우면 헬기 안내를 띄우지 않는다. 경증(Pre-KTAS 3~5)은 가장 가까운 지역응급의료기관.
   const near = createPage({...trauma, tweak: hospitals => hospitals.items.forEach((item, index) => { item.trauma_center = index === 1; })});
   await start(near);
