@@ -670,8 +670,8 @@ test("표준지침: 데이터가 없는 조건이 핵심인 분류(뇌졸중·�
 
 test("표준지침: 중증외상은 권역외상센터, 정보가 없으면 확인 필요, 멀면 헬기 안내", async () => {
   const trauma = {symptom: {category_id: "trauma", secondary_category_id: null, symptom_keywords: [], is_child: false, max_minutes: null}};
-  // 1) 외상센터 지정 정보가 hospitals.json에 없을 때: 등급을 '확인 필요'로 두고 알린다.
-  const page = createPage(trauma); await start(page);
+  // 1) 외상센터 지정 정보가 hospitals.json에 없을 때(refresh_hospitals.py --write 전): 등급을 '확인 필요'로 두고 알린다.
+  const page = createPage({...trauma, tweak: hospitals => hospitals.items.forEach(item => { delete item.trauma_center; })}); await start(page);
   await searchSymptom(page);
   assert.strictEqual(page.buttonsIn("recommend-results").length, 0);
   assert.ok(page.els["recommend-unknown-list"].children.some(item => /권역외상센터 확인 필요\(외상센터 지정 정보 미반영\)/.test(item.textContent)));
@@ -789,6 +789,14 @@ test("화면용 요약: 적용 기준·나이·확인 항목을 구조로 알려
   assert.deepStrictEqual(page.run("window.medinaviRecommend.lastResult()").level, "지역응급의료기관 이상");
 });
 
+
+test("병원 자료: 외상센터 지정 정보가 반영돼 있고 실제 권역외상센터가 표시됨", () => {
+  // tools/refresh_hospitals.py --write 로 반영한 값 (국립중앙의료원 외상센터 목록)
+  const centers = hospitalsRaw.items.filter(item => item.trauma_center === true).map(item => item.dutyName);
+  assert.ok(hospitalsRaw.items.every(item => typeof item.trauma_center === "boolean"), "모든 기관에 외상센터 여부가 있어야 해요");
+  assert.ok(centers.length >= 1, "외상센터가 하나도 없어요");
+  assert.ok(centers.some(name => name.includes("원주세브란스")), centers.join(","));
+});
 // ---------------------------------------------------------------------------
 (async () => {
   let failed = 0;

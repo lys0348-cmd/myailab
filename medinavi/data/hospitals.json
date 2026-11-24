@@ -2,9 +2,9 @@
   "source": "국립중앙의료원 전국 응급의료기관 정보 조회 서비스",
   "operation": "getEgytListInfoInqire",
   "region": "강원특별자치도",
-  "retrieved_at": "2026-11-03T16:11:26.569Z",
+  "retrieved_at": "2026-11-24T23:07:57.970454+00:00",
   "resultCode": "00",
-  "totalCount": 23,
+  "totalCount": "23",
   "items": [
     {
       "dutyAddr": "강원특별자치도 강릉시 사천면 방동길 38",
@@ -45,10 +45,11 @@
         "피부과",
         "핵의학과"
       ],
-      "departments_status": "등록 확인"
+      "departments_status": "등록 확인",
+      "trauma_center": false
     },
     {
-      "dutyAddr": "강원특별자치도 춘천시 백령로 156- (효자동,(효자동))",
+      "dutyAddr": "강원특별자치도 춘천시 백령로 156-  (효자동,(효자동))",
       "dutyEmcls": "G001",
       "dutyEmclsName": "권역응급의료센터",
       "dutyName": "강원대학교병원",
@@ -87,7 +88,8 @@
         "피부과",
         "핵의학과"
       ],
-      "departments_status": "등록 확인"
+      "departments_status": "등록 확인",
+      "trauma_center": false
     },
     {
       "dutyAddr": "강원특별자치도 강릉시 경강로 2007-0 (남문동,강릉의료원)",
@@ -102,7 +104,8 @@
       "wgs84Lat": "37.74931042017154",
       "wgs84Lon": "128.8887963251862",
       "departments": [],
-      "departments_status": "확인 필요"
+      "departments_status": "확인 필요",
+      "trauma_center": false
     },
     {
       "dutyAddr": "강원특별자치도 삼척시 오십천로 473 (정상동)",
@@ -131,7 +134,8 @@
         "진단검사의학과",
         "치과"
       ],
-      "departments_status": "등록 확인"
+      "departments_status": "등록 확인",
+      "trauma_center": false
     },
     {
       "dutyAddr": "강원특별자치도 속초시 영랑호반길 3 (영랑동)",
@@ -159,10 +163,11 @@
         "정형외과",
         "치과"
       ],
-      "departments_status": "등록 확인"
+      "departments_status": "등록 확인",
+      "trauma_center": false
     },
     {
-      "dutyAddr": "강원특별자치도 영월군 영월읍 중앙1로 59- ( )",
+      "dutyAddr": "강원특별자치도 영월군 영월읍 중앙1로 59-  ( )",
       "dutyEmcls": "G007",
       "dutyEmclsName": "지역응급의료기관",
       "dutyName": "강원특별자치도영월의료원",
@@ -191,7 +196,8 @@
         "치과",
         "피부과"
       ],
-      "departments_status": "등록 확인"
+      "departments_status": "등록 확인",
+      "trauma_center": false
     },
     {
       "dutyAddr": "강원특별자치도 원주시 서원대로 387 (개운동, (개운동))",
@@ -206,7 +212,8 @@
       "wgs84Lat": "37.332496031537154",
       "wgs84Lon": "127.94896203327231",
       "departments": [],
-      "departments_status": "확인 필요"
+      "departments_status": "확인 필요",
+      "trauma_center": false
     },
     {
       "dutyAddr": "강원특별자치도 정선군 정선읍 봉양1길 145-0",
@@ -221,7 +228,8 @@
       "wgs84Lat": "37.3829238141538",
       "wgs84Lon": "128.658420530712",
       "departments": [],
-      "departments_status": "확인 필요"
+      "departments_status": "확인 필요",
+      "trauma_center": false
     },
     {
       "dutyAddr": "강원특별자치도 동해시 하평로 11 (평릉동, (평릉동))",
@@ -236,7 +244,8 @@
       "wgs84Lat": "37.53232311891651",
       "wgs84Lon": "129.1058560226859",
       "departments": [],
-      "departments_status": "확인 필요"
+      "departments_status": "확인 필요",
+      "trauma_center": false
     },
     {
       "dutyAddr": "강원특별자치도 태백시 보드미길 8 (장성동, (장성동))",
@@ -265,7 +274,8 @@
         "진단검사의학과",
         "치과"
       ],
-      "departments_status": "등록 확인"
+      "departments_status": "등록 확인",
+      "trauma_center": false
     },
     {
       "dutyAddr": "강원특별자치도 원주시 일산로 20-0 (일산동, (일산동))",
@@ -310,7 +320,8 @@
         "피부과",
         "핵의학과"
       ],
-      "departments_status": "등록 확인"
+      "departments_status": "등록 확인",
+      "trauma_center": true
     },
     {
       "dutyAddr": "강원특별자치도 강릉시 강릉대로419번길 42 (포남동)",
@@ -348,10 +359,11 @@
         "진단검사의학과",
         "치과보철과"
       ],
-      "departments_status": "등록 확인"
+      "departments_status": "등록 확인",
+      "trauma_center": false
     },
     {
-      "dutyAddr": "강원특별자치도 동해시 하평로 26- (평릉동, (평릉동))",
+      "dutyAddr": "강원특별자치도 동해시 하평로 26-  (평릉동, (평릉동))",
       "dutyEmcls": "G007",
       "dutyEmclsName": "지역응급의료기관",
       "dutyName": "의료법인동해동인병원",
@@ -363,7 +375,8 @@
       "wgs84Lat": "37.530006805605616",
       "wgs84Lon": "129.1074043067605",
       "departments": [],
-      "departments_status": "확인 필요"
+      "departments_status": "확인 필요",
+      "trauma_center": false
     },
     {
       "dutyAddr": "강원특별자치도 양구군 양구읍 중심로 160",
@@ -384,7 +397,8 @@
         "응급의학과",
         "정형외과"
       ],
-      "departments_status": "등록 확인"
+      "departments_status": "등록 확인",
+      "trauma_center": false
     },
     {
       "dutyAddr": "강원특별자치도 원주시 원일로 22 (인동)",
@@ -408,7 +422,8 @@
         "정형외과",
         "치과보철과"
       ],
-      "departments_status": "등록 확인"
+      "departments_status": "등록 확인",
+      "trauma_center": false
     },
     {
       "dutyAddr": "강원특별자치도 속초시 중앙로 11 (교동)",
@@ -437,7 +452,8 @@
         "정형외과",
         "진단검사의학과"
       ],
-      "departments_status": "등록 확인"
+      "departments_status": "등록 확인",
+      "trauma_center": false
     },
     {
       "dutyAddr": "강원특별자치도 춘천시 금강로 39 (낙원동)",
@@ -460,7 +476,8 @@
         "외과",
         "정형외과"
       ],
-      "departments_status": "등록 확인"
+      "departments_status": "등록 확인",
+      "trauma_center": false
     },
     {
       "dutyAddr": "강원특별자치도 철원군 갈말읍 명성로 208-0",
@@ -483,7 +500,8 @@
         "정형외과",
         "치과"
       ],
-      "departments_status": "등록 확인"
+      "departments_status": "등록 확인",
+      "trauma_center": false
     },
     {
       "dutyAddr": "강원특별자치도 평창군 평창읍 노성로 11",
@@ -518,7 +536,8 @@
         "한방안이비인후피부과",
         "한방재활의학과"
       ],
-      "departments_status": "등록 확인"
+      "departments_status": "등록 확인",
+      "trauma_center": false
     },
     {
       "dutyAddr": "강원특별자치도 춘천시 삭주로 77 (교동)",
@@ -558,7 +577,8 @@
         "피부과",
         "핵의학과"
       ],
-      "departments_status": "등록 확인"
+      "departments_status": "등록 확인",
+      "trauma_center": false
     },
     {
       "dutyAddr": "강원특별자치도 홍천군 홍천읍 산림공원1길 17",
@@ -582,7 +602,8 @@
         "정형외과",
         "진단검사의학과"
       ],
-      "departments_status": "등록 확인"
+      "departments_status": "등록 확인",
+      "trauma_center": false
     },
     {
       "dutyAddr": "강원특별자치도 화천군 화천읍 강변로 111 (화천군보건의료원)",
@@ -605,7 +626,8 @@
         "치과",
         "한방내과"
       ],
-      "departments_status": "등록 확인"
+      "departments_status": "등록 확인",
+      "trauma_center": false
     },
     {
       "dutyAddr": "강원특별자치도 횡성군 횡성읍 횡성로 275",
@@ -627,9 +649,11 @@
         "영상의학과",
         "정형외과"
       ],
-      "departments_status": "등록 확인"
+      "departments_status": "등록 확인",
+      "trauma_center": false
     }
   ],
   "departments_source": "국립중앙의료원 전국 응급의료기관 정보 조회 서비스 (getEgytBassInfoInqire)",
-  "departments_retrieved_at": "2026-11-12T04:38:29.968176+00:00"
+  "departments_retrieved_at": "2026-11-12T04:38:29.968176+00:00",
+  "trauma_source": "국립중앙의료원 전국 응급의료기관 정보 조회 서비스 (getStrmListInfoInqire)"
 }
