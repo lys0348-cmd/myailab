@@ -252,10 +252,10 @@ details.fold li button { text-align:left; width:100%; min-height:44px; border:1p
 .pick-list button[data-tier] { border-left-color:#f0c36d }
 .pick-list button[data-tier="capacity"] { border-left-color:var(--bad) }
 .pick-list button[data-tier="guided"] { border-left-color:#7c8db5 }
-.pick-list button[data-tier="guided"] .p-rank { color:var(--navy) }
+.pick-list button[data-tier="guided"] .p-rank, .pick-list button[data-tier="guided"] .p-wait { color:var(--navy) }
 .pick-list .p-name { font-size:15px; font-weight:800; color:var(--text) }
 .pick-list .p-rank { display:inline-block; min-width:22px; font-weight:800; color:var(--teal) }
-.pick-list button[data-tier] .p-rank { color:var(--wait) }
+.pick-list button[data-tier]:not([data-tier="guided"]) .p-rank { color:var(--wait) }
 .pick-list .p-sub { color:var(--muted) }
 .pick-list .p-ok { color:var(--ok) } .pick-list .p-wait { color:var(--wait) } .pick-list .p-bad { color:var(--bad) }
 body.list-mode .track, body.list-mode .sheet-bar { display:none }
