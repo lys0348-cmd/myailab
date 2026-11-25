@@ -248,6 +248,32 @@ class SymptomParse(unittest.TestCase):
         self.assertIn("secondary_category_id에 넣는다", self.openai.last["instructions"])
         self.assertIn("화상은 burn, 절단은 amputation 하나만", self.openai.last["instructions"])
 
+    def test_secondary_tidy(self):
+        # 2026-11-25 AI 채점 오답 7건: 첫 분류는 맞고 두 번째 분류를 더 붙임. AI가 어느 순서로 답해도 서버가 바로잡는다.
+        out = lambda primary, secondary: {"category_id": primary, "secondary_category_id": secondary, "symptom_keywords": [], "is_child": None, "max_minutes": None, "age_months": None}
+        cases = [("trauma", "consciousness", "오토바이 사고 후 의식이 흐려짐"), ("trauma", "gi_bleeding", "계단에서 굴러 머리를 다쳤고 피가 많이 남"),
+                 ("seizure", "fever", "5살 아이가 39도 고열이 나고 경련을 했어요"), ("seizure", "consciousness", "3살 아이가 열경련 후 잘 깨지 않아요"),
+                 ("gi_bleeding", "abdominal", "심한 복통과 함께 피를 토했어요"), ("abdominal", "fever", "오른쪽 아랫배가 너무 아프고 열이 남"),
+                 ("environmental", "respiratory", "벌에 쏘인 뒤 온몸이 붓고 숨쉬기 힘들어요")]
+        rules = self.app.get_rules()["secondary_rules"]
+        tidy = lambda primary, secondary: self.app.tidy_secondary(primary, secondary, rules)
+        for expected, extra, text in cases:
+            for primary, secondary in ((expected, extra), (extra, expected)):
+                self.assertEqual(tidy(primary, secondary), (expected, None), (text, primary, secondary))
+        # 진짜 두 분류는 그대로 둔다.
+        for primary, secondary in [("cardiac", "stroke"), ("burn", "trauma"), ("obstetric", "trauma"), ("obstetric", "seizure")]:
+            self.assertEqual(tidy(primary, secondary), (primary, secondary))
+        # 둘 다 결과 증상이면 첫 분류만
+        self.assertEqual(tidy("respiratory", "fever"), ("respiratory", None))
+        # 실제 분류 요청에서도 적용된다 (AI가 결과 증상을 첫 분류로 답한 경우 포함).
+        result = self.parse(out("consciousness", "trauma"), "오토바이 사고 후 의식이 흐려짐")
+        self.assertEqual((result.category_id, result.secondary_category_id), ("trauma", None))
+        result = self.parse(out("cardiac", "stroke"), "가슴이 아프고 한쪽 팔다리에 힘이 빠져요")
+        self.assertEqual((result.category_id, result.secondary_category_id), ("cardiac", "stroke"))
+        self.assertIn("fever, consciousness, respiratory, syncope는 그 증상이 혼자 있을 때만", self.openai.last["instructions"])
+        ids = {category["id"] for category in self.app.get_rules()["categories"]}
+        self.assertLessEqual(set(rules["consequence"]) | {id for pair in rules["dominates"] for id in pair}, ids, "규칙표에 없는 분류 id")
+
     def test_no_key(self):
         app, _, _ = load_app()
         with self.assertRaises(app.HTTPException) as context:

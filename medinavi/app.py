@@ -549,7 +549,8 @@ async def parse_symptom(request: Request, body: SymptomRequest):
     if not api_key:
         raise HTTPException(503, "자연어 검색이 아직 설정되지 않았어요.")
 
-    categories = get_rules()["categories"]
+    rules = get_rules()
+    categories = rules["categories"]
     allowed_ids = [category["id"] for category in categories]
     category_list = "\n".join(f"- {category['id']}: {category['label']} (예: {', '.join(category.get('examples', [])) or '없음'})" for category in categories)
 
@@ -578,6 +579,8 @@ async def parse_symptom(request: Request, body: SymptomRequest):
     - 화상, 절단, 칼에 찔림처럼 그 자체가 다친 방식인 경우: 화상은 burn, 절단은 amputation 하나만 고르고 trauma를 더하지 않는다. '사고로 손가락이 절단됨'처럼 원인만 있고 다친 곳이 절단·화상 부위뿐이면 하나만 고른다. 화상·절단 부위와 따로 다른 곳을 다쳤다는 말(예: 교통사고로 다쳤고 화상도 입음)이 있을 때만 두 분류로 넣는다
     - 외상으로 생긴 배의 출혈·통증이나 의식 저하: trauma 하나만 고른다 (abdominal, consciousness는 외상이 아닌 경우다)
     - 열, 발열, 구토, 어지러움 같은 동반 증상
+    - 다른 문제 때문에 생긴 열·의식 저하·호흡곤란·실신: fever, consciousness, respiratory, syncope는 그 증상이 혼자 있을 때만 고른다. 예: 경련하며 열이 남은 seizure 하나, 경련 후 잘 깨지 않음도 seizure 하나, 벌에 쏘인 뒤 숨쉬기 힘듦은 environmental 하나, 사고 후 의식이 흐려짐은 trauma 하나, 아랫배가 아프고 열이 남은 abdominal 하나
+    - 다쳐서 나는 피: 외상 출혈은 trauma 하나만 고른다 (gi_bleeding은 토혈·혈변·객혈일 때만이다)
     - 같은 문제를 다르게 말한 것 (예: 피를 토하고 배가 아픔은 gi_bleeding 하나)
     한 분류만 해당하면 secondary_category_id는 null이다. 'unclear'는 증상이 막연해서 어느 분류인지 알 수 없을 때만 고르고, 이때 secondary_category_id는 null이다.
     symptom_keywords에는 분류의 근거가 된 단어나 짧은 구를 문장에서 그대로 옮겨 최대 5개 넣는다.
@@ -630,12 +633,30 @@ async def parse_symptom(request: Request, body: SymptomRequest):
     secondary = result.secondary_category_id
     if category_id == "unclear" or secondary not in allowed_ids or secondary in (category_id, "unclear"):
         secondary = None
+    category_id, secondary = tidy_secondary(category_id, secondary, rules.get("secondary_rules", {}))
     return SymptomClassification(category_id = category_id,
                                  secondary_category_id = secondary,
                                  symptom_keywords = list(dict.fromkeys(keywords))[:5],
                                  is_child = is_child,
                                  max_minutes = max_minutes,
                                  age_months = age_months,)
+
+def tidy_secondary(primary: str, secondary: str | None, secondary_rules: dict):
+    """AI가 붙인 두 번째 분류를 규칙표(secondary_rules)로 한 번 더 정리한다.
+    - consequence(열·의식 저하·호흡곤란·실신)는 다른 문제의 결과인 경우가 많아, 다른 분류와 함께면 그 분류만 남긴다.
+    - dominates [남길, 뺄] 조합이면 남길 분류만 쓴다.
+    """
+    if not secondary:
+        return primary, None
+    consequence = set(secondary_rules.get("consequence", []))
+    if secondary in consequence:
+        return primary, None
+    if primary in consequence:
+        return secondary, None
+    for keep, drop in secondary_rules.get("dominates", []):
+        if {primary, secondary} == {keep, drop}:
+            return keep, None
+    return primary, secondary
 
 # ---- AI 결과 설명 ---------------------------------------------------------
 # 화면에서 이미 계산한 판정과 근거만 받아 쉬운 말로 풀어 쓴다. AI는 판정이나 순위를 새로 만들지 않는다.
