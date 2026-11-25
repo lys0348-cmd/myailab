@@ -881,5 +881,28 @@
   "age": {
     "child_under_months": 216,
     "note": "나이는 확인창에 직접 입력한다(AI는 문장에 나온 나이만 채움). 만 18세(216개월) 미만이면 소아로 보고 소아청소년과·응급실 소아를 참고로 표시한다. 나이별 기준은 variants의 when.age_months_lt(개월 수 미만)로 적는다. 나이를 모르면 '소아' 체크박스로 소아 여부만 고른다."
+  },
+  "secondary_rules": {
+    "note": "AI가 두 번째 분류를 붙인 뒤 서버가 한 번 더 정리한다. consequence: 다른 문제 때문에 생기기 쉬운 증상(열·의식 저하·호흡곤란·실신)이라, 다른 분류와 함께 나오면 그 다른 분류만 남긴다(둘 다 이 목록이면 첫 분류만). dominates: [남길 분류, 뺄 분류] 조합이 함께 나오면 남길 분류만 쓴다. 2026-11-25 AI 채점 오답 7건(모두 두 번째 분류 과다)을 보고 정함.",
+    "consequence": [
+      "fever",
+      "consciousness",
+      "respiratory",
+      "syncope"
+    ],
+    "dominates": [
+      [
+        "trauma",
+        "gi_bleeding"
+      ],
+      [
+        "trauma",
+        "abdominal"
+      ],
+      [
+        "gi_bleeding",
+        "abdominal"
+      ]
+    ]
   }
 }
