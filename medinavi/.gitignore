@@ -10,3 +10,4 @@ server.ipynb
 data/*
 !data/hospitals.json
 !data/recommendation_rules.json
+!data/regions.json

@@ -72,6 +72,8 @@ def get_hospitals():
 
     # 중증질환 검색 조건 선택지 (실시간 정보를 못 불러와도 선택 칸은 보이도록 함께 보낸다)
     data["illness_types"] = [label for _, label in ILLNESS_FIELDS]
+    # 강원 밖 병원에 '타 시·도' 표시를 붙이도록 기준 시·도를 함께 보낸다.
+    data["home_sido"] = load_regions().get("home", {}).get("sido", "강원특별자치도")
 
     return data
 
@@ -81,7 +83,7 @@ DIRECTIONS_URL = "https://maps.apigw.ntruss.com/map-direction/v1/driving"
 # 호출 제한: 누구나 부를 수 있는 API(AI·주소 검색·길찾기·실시간)를 IP별 1분 호출 수로 제한해
 # 요금과 공공 API 한도 소진을 막는다. 서버 메모리에만 두며 서버가 다시 켜지면 초기화된다.
 # ---------------------------------------------------------------------------
-RATE_LIMITS = {"route": 120, "geocode": 20, "symptom": 10, "realtime": 30, "explain": 10}   # 분당 허용 횟수 (조건 검색 1회에 길찾기 최대 23번)
+RATE_LIMITS = {"route": 120, "geocode": 20, "symptom": 10, "realtime": 30, "explain": 10}   # 분당 허용 횟수 (검색 1회에 길찾기는 직선거리로 닿을 수 있는 병원만)
 rate_history = {}
 
 def client_ip(request):
@@ -330,40 +332,79 @@ def parse_hvidate(value):
     except ValueError:
         return None
 
+REGIONS_PATH = BASE_DIR / "data" / "regions.json"
+
+def load_hospital_items():
+    try:
+        with DATA_PATH.open("r", encoding = "utf-8-sig") as file:
+            return json.load(file)["items"]
+    except (OSError, KeyError, TypeError, json.JSONDecodeError):
+        return []
+
+def load_regions():
+    try:
+        regions = json.loads(REGIONS_PATH.read_text(encoding = "utf-8-sig"))
+        return regions if isinstance(regions, dict) else {}
+    except (OSError, json.JSONDecodeError):
+        return {}
+
+def realtime_neighbors():
+    # hospitals.json에 기관이 들어 있는 인접 시·도만 조회한다. (목록을 아직 안 받았으면 강원만 조회)
+    neighbors = [area.get("sido") for area in load_regions().get("neighbors", []) if isinstance(area, dict)]
+    present = {item.get("sido") for item in load_hospital_items()}
+    return [sido for sido in neighbors if sido in present]
+
+async def fetch_stage(client, operation, region, rows):
+    # 시·도 하나를 조회해 ({기관ID: {항목: 값}}, 오류)를 돌려준다.
+    params = {"serviceKey": EMERGENCY_API_KEY, "STAGE1": region, "pageNo": 1, "numOfRows": rows}
+    try:
+        response = await client.get(f"{EMERGENCY_API_URL}/{operation}", params = params)
+    except httpx.TimeoutException:
+        return {}, "응답 시간 초과"
+    except httpx.RequestError as error:
+        return {}, f"연결 오류 ({type(error).__name__})"
+    if response.status_code != 200:
+        return {}, f"HTTP {response.status_code}"
+    try:
+        root = ET.fromstring(response.content)
+    except ET.ParseError:
+        return {}, "응답 형식 오류"
+    code = root.findtext(".//resultCode") or root.findtext(".//returnReasonCode")
+    if code not in ("00", None):
+        return {}, f"결과코드 {code}"
+    items = {}
+    for item in root.iter("item"):
+        fields = {child.tag: (child.text or "").strip() for child in item}
+        if fields.get("hpid"):
+            items[fields["hpid"]] = fields
+    return items, (None if items else "기관 없음")
+
 async def fetch_region(client, operation):
-    # 강원 전체를 한 번에 조회해 {기관ID: {항목: 값}}으로 돌려준다.
-    last_error = "응답 없음"
-    for region in REALTIME_REGION_NAMES:
-        params = {"serviceKey": EMERGENCY_API_KEY, "STAGE1": region, "pageNo": 1, "numOfRows": 100}
-        try:
-            response = await client.get(f"{EMERGENCY_API_URL}/{operation}", params = params)
-        except httpx.TimeoutException:
-            last_error = "응답 시간 초과"
-            continue
-        except httpx.RequestError as error:
-            last_error = f"연결 오류 ({type(error).__name__})"
-            continue
-        if response.status_code != 200:
-            last_error = f"HTTP {response.status_code}"
-            continue
-        try:
-            root = ET.fromstring(response.content)
-        except ET.ParseError:
-            last_error = "응답 형식 오류"
-            continue
-        code = root.findtext(".//resultCode") or root.findtext(".//returnReasonCode")
-        if code not in ("00", None):
-            last_error = f"결과코드 {code}"
-            continue
-        items = {}
-        for item in root.iter("item"):
-            fields = {child.tag: (child.text or "").strip() for child in item}
-            if fields.get("hpid"):
-                items[fields["hpid"]] = fields
-        if items:
-            return items, None
-        last_error = "강원 기관 없음"
-    return {}, last_error
+    # 강원 전체와, 목록에 기관이 있는 인접 시·도를 함께 조회해 ({기관ID: {항목: 값}}, 오류)로 돌려준다.
+    # 인접 시·도는 응답이 커서 hospitals.json에 있는 기관만 남긴다. 인접 시·도만 실패하면 강원 값은 그대로 쓴다.
+    async def home():
+        last_error = "응답 없음"
+        for region in REALTIME_REGION_NAMES:
+            items, error = await fetch_stage(client, operation, region, 100)
+            if items:
+                return items, None
+            last_error = "강원 기관 없음" if error == "기관 없음" else error
+        return {}, last_error
+
+    neighbors = realtime_neighbors()
+    results = await asyncio.gather(home(), *(fetch_stage(client, operation, sido, 300) for sido in neighbors))
+    (items, error), neighbor_results = results[0], results[1:]
+    if neighbors:
+        known = {item.get("hpid") for item in load_hospital_items()}
+        failed = []
+        for sido, (found, neighbor_error) in zip(neighbors, neighbor_results):
+            if neighbor_error:
+                failed.append(sido)
+            items.update({hpid: fields for hpid, fields in found.items() if hpid in known and hpid not in items})
+        if failed:
+            note = "인접 시·도 조회 실패(" + ", ".join(failed) + ")"
+            error = f"{error}, {note}" if error else note
+    return items, error
 
 def parse_message_time(value):
     try:
@@ -393,11 +434,7 @@ def build_notice(fields, now):
     }
 
 def hospital_ids():
-    try:
-        with DATA_PATH.open("r", encoding = "utf-8-sig") as file:
-            return [item["hpid"] for item in json.load(file)["items"] if item.get("hpid")]
-    except (OSError, KeyError, TypeError, json.JSONDecodeError):
-        return []
+    return [item["hpid"] for item in load_hospital_items() if isinstance(item, dict) and item.get("hpid")]
 
 async def fetch_messages(client):
     """병원별 메시지를 조회해 ({기관ID: [원본 항목]}, 오류)를 돌려준다. 일부 병원만 실패해도 나머지는 쓴다."""
@@ -458,7 +495,7 @@ def build_realtime(beds_raw, illness_raw):
 @app.get("/api/realtime")
 async def get_realtime(request: Request):
     check_rate(request, "realtime")
-    # 강원 응급의료기관의 실시간 가용병상·중증질환 수용 가능 정보. 실제 수용 가능 여부를 뜻하지 않는다.
+    # 강원(과 인접 시·도) 응급의료기관의 실시간 가용병상·중증질환 수용 가능 정보. 실제 수용 가능 여부를 뜻하지 않는다.
     if not EMERGENCY_API_KEY:
         raise HTTPException(503, "실시간 병상 정보가 아직 설정되지 않았어요. (EMERGENCY_API_KEY)")
 

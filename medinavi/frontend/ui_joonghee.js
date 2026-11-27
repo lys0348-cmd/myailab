@@ -435,7 +435,7 @@
     return '<article class="rcard' + (tier ? ' is-ref' : '') + '" data-index="' + index + '" data-hpid="' + esc(hpid) + '" data-name="' + esc(name) + '" data-tier="' + (tier?.id || "") + '" aria-label="' + (index + 1) + '번째 기관' + (tier ? ', ' + tier.label : '') + '">' +
       '<button type="button" class="rcard-top" data-act="route" aria-label="' + esc(name) + ' 경로 보기">' + rankBadge +
       '<span><span class="rname">' + esc(name) + '</span>' + (isCandidate ? '<span class="cand-flag">이송 후보</span>' : '') +
-      '<span class="rtype">' + esc(hospital.dutyEmclsName || "기관 구분 확인 필요") + '</span></span><span class="chev">' + icon("next") + '</span></button>' +
+      '<span class="rtype">' + esc(window.medinaviJudge?.typeText(hospital) || hospital.dutyEmclsName || "기관 구분 확인 필요") + '</span></span><span class="chev">' + icon("next") + '</span></button>' +
       (time ? '<p class="rtime">' + icon("car") + '예상 ' + time + '분' + (km ? ' · ' + km + 'km' : '') + ' <small>일반 자동차 기준</small></p>' : '<p class="rtime">' + icon("car") + '이동시간 확인 필요</p>') +
       '<div class="layer"><h4>공공데이터 · 병원 입력값 (실제와 다를 수 있음)</h4><ul>' +
         tierLine +
@@ -558,7 +558,7 @@
       const notice = window.medinaviRealtime?.noticeText?.(hpid) || "";
       return '<li><button type="button" data-i="' + index + '"' + (tier ? ' data-tier="' + tier.id + '"' : '') + '>' +
         '<span class="p-name"><span class="p-rank">' + (index + 1) + '.</span> ' + esc(hospital.dutyName || entry.first) + (tier ? ' <span class="note">(참고)</span>' : '') + '</span>' +
-        '<span class="p-sub">' + esc(hospital.dutyEmclsName || "기관 구분 확인 필요") + (time ? ' · 약 ' + time + '분' : '') + (km ? ' · ' + km + 'km' : '') + '</span>' +
+        '<span class="p-sub">' + esc(window.medinaviJudge?.typeText(hospital) || hospital.dutyEmclsName || "기관 구분 확인 필요") + (time ? ' · 약 ' + time + '분' : '') + (km ? ' · ' + km + 'km' : '') + '</span>' +
         (cond ? '<span class="' + cond.cls + '">' + esc(cond.text) + '</span>' : '') +
         (realtime ? '<span>' + esc(realtime) + '</span>' : '<span class="p-sub">병상 정보 미제공 (0이나 불가가 아님)</span>') +
         (notice ? '<span class="p-wait">' + esc(notice) + '</span>' : '') +

@@ -62,16 +62,46 @@
     return check.name + " " + VERDICT[check.status] + "(" + check.detail + ")";
   }
 
-  // 길찾기를 4개씩 나눠 조회한다. 중간에 취소되면 null.
-  async function lookupRoutes(entries, origin, signal, lookup = window.medinaviLookupRoute) {
+  // 출발지에서 병원까지 직선거리(km). 좌표가 없으면 null.
+  function straightKm(hospital, origin) {
+    const lat = Number(hospital.wgs84Lat), lon = Number(hospital.wgs84Lon);
+    if (!origin || !Number.isFinite(lat) || !Number.isFinite(lon)) return null;
+    const rad = Math.PI / 180;
+    const a = Math.sin((lat - origin.latitude) * rad / 2) ** 2
+      + Math.cos(origin.latitude * rad) * Math.cos(lat * rad) * Math.sin((lon - origin.longitude) * rad / 2) ** 2;
+    return 2 * 6371 * Math.asin(Math.sqrt(a));
+  }
+
+  // 구급차가 직선거리로 분당 2km(시속 120km)보다 빨리 갈 수는 없으므로, 그보다 먼 병원은 길찾기를 하지 않는다.
+  // 인접 시·도 병원을 넣어 후보가 늘어도 길찾기 호출이 늘지 않게 하려는 것이다.
+  const KM_PER_MINUTE = 2;
+  function reachable(hospital, origin, maxMinutes) {
+    if (!Number.isFinite(maxMinutes)) return true;
+    const km = straightKm(hospital, origin);
+    return km === null || km <= maxMinutes * KM_PER_MINUTE;
+  }
+
+  // 길찾기를 4개씩 나눠 조회한다. 중간에 취소되면 null. maxMinutes를 주면 닿을 수 없는 먼 병원은 빼고 돌려준다.
+  async function lookupRoutes(entries, origin, signal, lookup = window.medinaviLookupRoute, maxMinutes = NaN) {
+    const near = entries.filter(entry => reachable(entry.hospital, origin, maxMinutes));
     const routed = [];
-    for (let index = 0; index < entries.length; index += 4) {
-      const batch = entries.slice(index, index + 4);
+    for (let index = 0; index < near.length; index += 4) {
+      const batch = near.slice(index, index + 4);
       const results = await Promise.all(batch.map(entry => lookup(entry.hospital, origin, signal)));
       if (signal.aborted) return null;
       results.forEach((result, offset) => routed.push({...batch[offset], route: result.route}));
     }
+    routed.far = entries.length - near.length;
     return routed;
+  }
+
+  // 다른 시·도 병원이면 '타 시·도(경기도)' 같은 표시를 붙인다. 시·도 정보가 없으면 강원으로 본다.
+  function regionTag(hospital) {
+    const home = window.medinaviData?.home_sido;
+    return hospital?.sido && home && hospital.sido !== home ? "타 시·도(" + hospital.sido + ")" : "";
+  }
+  function typeText(hospital, fallback = "기관 구분 확인 필요") {
+    return [hospital?.dutyEmclsName || fallback, regionTag(hospital)].filter(Boolean).join(" · ");
   }
 
   // 마지막 검색(조건 검색 또는 증상 추천)의 병원별 조건 판정. 병원 상세 '추가 확인 사항'에서 쓴다.
@@ -83,5 +113,5 @@
     return lastChecks.get(hpid) || [];
   }
 
-  window.medinaviJudge = {remember, checksFor, VERDICT, resolve, evaluate, checkText, lookupRoutes};
+  window.medinaviJudge = {remember, checksFor, VERDICT, resolve, evaluate, checkText, lookupRoutes, straightKm, regionTag, typeText};
 })();
