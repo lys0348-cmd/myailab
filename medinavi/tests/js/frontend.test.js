@@ -504,8 +504,9 @@ test("전화 버튼: 결과·확인 필요·상세에 응급실 번호로 바로
   calls.forEach((call, index) => {
     const hospital = hospitals.items.find(item => item.hpid === results[index].dataset.hpid);
     assert.ok(call, hospital.dutyName + "에 전화 버튼이 없어요");
-    assert.strictEqual(call.href, "tel:" + hospital.dutyTel3.replace(/[^0-9]/g, ""));
-    assert.strictEqual(call.textContent, "📞 전화 응급실 " + hospital.dutyTel3);
+    const number = page.run("window.medinaviCall.dialable(" + JSON.stringify(hospital.dutyTel3) + ")");
+    assert.strictEqual(call.href, "tel:" + number);
+    assert.ok(call.textContent.startsWith("📞 전화 응급실 "), call.textContent);
     assert.match(call.attrs["aria-label"], new RegExp(hospital.dutyName + " 응급실에 전화 걸기"));
   });
   assert.ok(callsIn(page, "search-ill-unknown-list").every(Boolean), "확인 필요 기관에도 전화 버튼");
@@ -733,6 +734,24 @@ test("인접 시·도: 경기 등 타 시·도 병원도 후보로 넣고 표시
   // 시간 제한을 넉넉히 하면 먼 병원도 길찾기를 한다.
   await searchSymptom(page, {minutes: "300"});
   assert.ok(page.routeRequests.some(params => params.get("hospital_id") === "G_FAR"));
+});
+
+test("전화번호 정리: 범위 표기·대표번호 앞 지역번호·지역번호 없는 대표번호 (인접 시·도 병원 실제 표기)", async () => {
+  const page = createPage();
+  await start(page);
+  const dial = value => page.run("window.medinaviCall.dialable(" + JSON.stringify(value) + ")");
+  assert.strictEqual(dial("031-574-9118~9"), "0315749118");
+  assert.strictEqual(dial("031-1644-9118"), "16449118");
+  assert.strictEqual(dial("1661-7500"), "16617500");
+  assert.strictEqual(dial("0318285000"), "0318285000");
+  assert.strictEqual(dial("031-828-5000"), "0318285000");
+  assert.strictEqual(dial("033-610-3114"), "0336103114");
+  assert.strictEqual(dial("02-123-4567"), "021234567");
+  assert.strictEqual(dial("119"), "");
+  assert.strictEqual(dial(""), "");
+  const link = page.run("window.medinaviCall.link({dutyName: '구리', dutyTel3: '031-1644-9118'})");
+  assert.strictEqual(link.dataset.phone, "16449118");
+  assert.strictEqual(link.dataset.display, "응급실 1644-9118");
 });
 
 test("나이: AI가 읽은 나이를 채우고, 나이로 소아 여부와 나이별 기준(생후 3개월 미만 발열)을 정함", async () => {

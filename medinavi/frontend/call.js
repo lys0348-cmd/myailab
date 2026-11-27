@@ -16,7 +16,18 @@
     const number = digits(value);
     return /^01[016789]\d{7,8}$/.test(number) ? number : "";
   }
+  // 공공데이터 전화번호를 걸 수 있는 숫자로 바꾼다. 걸 수 없으면 "".
+  // 예: "031-574-9118~9" → 0315749118 (뒤 범위 표기 제거), "031-1644-9118" → 16449118 (대표번호 앞 지역번호 제거), "1661-7500" → 16617500
+  function dialable(phone) {
+    const text = String(phone ?? "").split(/[~,/]/)[0].trim();
+    // 지역번호와 대표번호(15xx·16xx·18xx)가 구분 기호로 나뉘어 있을 때만 지역번호를 뺀다 (031-8285000 같은 일반 번호는 그대로).
+    const tollFree = /^0\d{1,2}[-) ]+(1[5-9]\d{2})[- ]?(\d{4})$/.exec(text);
+    const number = tollFree ? tollFree[1] + tollFree[2] : digits(text);
+    return /^0\d{8,10}$/.test(number) || /^1[5-9]\d{6}$/.test(number) ? number : "";
+  }
   function pretty(number) {
+    if (number.length === 8) return number.slice(0, 4) + "-" + number.slice(4);
+    if (number.startsWith("02")) return "02-" + number.slice(2, -4) + "-" + number.slice(-4);
     if (number.length === 11) return number.slice(0, 3) + "-" + number.slice(3, 7) + "-" + number.slice(7);
     if (number.length === 10) return number.slice(0, 3) + "-" + number.slice(3, 6) + "-" + number.slice(6);
     return number;
@@ -93,9 +104,10 @@
   function link(hospital) {
     const er = String(hospital?.dutyTel3 || "").trim();
     const main = String(hospital?.dutyTel1 || "").trim();
-    const shown = er || main;
-    const number = digits(shown);
-    if (number.length < 7) return null;
+    const raw = er || main;
+    const number = dialable(raw);
+    if (!number) return null;
+    const shown = digits(raw) === number ? raw : pretty(number);
     const anchor = document.createElement("a");
     anchor.className = "call-link";
     anchor.dataset.phone = number;
@@ -115,5 +127,5 @@
 
   const invalid = readAddress();
   renderBanner(invalid);
-  window.medinaviCall = {link, attach, setTestNumber, testNumber: () => testNumber, validTestNumber};
+  window.medinaviCall = {link, attach, setTestNumber, testNumber: () => testNumber, validTestNumber, dialable, pretty};
 })();
