@@ -440,7 +440,7 @@
     const excluded = evaluated.filter(entry => entry.group === "excluded").length;
 
     areaStatus.textContent = "병원별 예상 이동시간을 조회하고 있어요.";
-    const routed = await window.medinaviJudge.lookupRoutes(evaluated.filter(entry => entry.group !== "excluded"), origin, controller.signal);
+    const routed = await window.medinaviJudge.lookupRoutes(evaluated.filter(entry => entry.group !== "excluded"), origin, controller.signal, undefined, maxMinutes);
     if (!routed) return;
     const noRoute = routed.filter(entry => !entry.route).length;
     const within = routed.filter(entry => entry.route && entry.route.duration_ms <= maxMinutes * 60000)
@@ -462,7 +462,7 @@
       const required = checks.filter(check => check.kind !== "reference");
       const reference = checks.filter(check => check.kind === "reference").slice(0, 4);
       const checkText = window.medinaviJudge.checkText;
-      let text = (index + 1) + ". " + hospital.dutyName + " (" + (hospital.dutyEmclsName || "구분 확인 필요") + ") · 약 " + minutes + "분 · " + distance + "km";
+      let text = (index + 1) + ". " + hospital.dutyName + " (" + window.medinaviJudge.typeText(hospital, "구분 확인 필요") + ") · 약 " + minutes + "분 · " + distance + "km";
       if (required.length) text += "\n조건: " + required.map(checkText).join(" · ");
       if (reference.length) text += "\n참고: " + reference.map(checkText).join(" · ");
       const realtimeText = window.medinaviRealtime?.summary(hospital.hpid);
@@ -518,7 +518,7 @@
       const choice = document.createElement("button");
       choice.type = "button";
       choice.dataset.hpid = hospital.hpid;
-      choice.textContent = hospital.dutyName + " · 약 " + Math.ceil(route.duration_ms / 60000) + "분 — " + (hospital.dutyEmclsName || "구분 없음")
+      choice.textContent = hospital.dutyName + " · 약 " + Math.ceil(route.duration_ms / 60000) + "분 — " + window.medinaviJudge.typeText(hospital, "구분 없음")
         + " (지침: " + level.label + ") · 조건 일치";
       choice.onclick = () => showHospitalDetail(hospital, data, route);
       item.append(choice);
@@ -562,7 +562,12 @@
       if (evaluated.some(entry => entry.level === "확인 필요" && levelCheck(entry.hospital, level).detail === "외상센터 지정 정보 미반영")) {
         helicopter = "⚠ 외상센터 지정 정보가 아직 반영되지 않아 기관 등급을 '확인 필요'로 표시했어요.";
       } else if (!nearest || nearest.duration_ms > rules.helicopter.max_minutes * 60000 || nearest.distance_m > rules.helicopter.max_km * 1000) {
-        helicopter = "🚁 권역외상센터까지 " + (nearest ? "약 " + Math.ceil(nearest.duration_ms / 60000) + "분 · " + (nearest.distance_m / 1000).toFixed(1) + "km" : "이동시간을 확인하지 못했어요") + ". " + rules.helicopter.note;
+        // 너무 멀어 길찾기를 하지 않은 외상센터는 직선거리로 알려준다.
+        const straight = evaluated.filter(entry => entry.level === "가능")
+          .map(entry => window.medinaviJudge.straightKm(entry.hospital, origin)).filter(km => km !== null).sort((a, b) => a - b)[0];
+        const distanceText = nearest ? "약 " + Math.ceil(nearest.duration_ms / 60000) + "분 · " + (nearest.distance_m / 1000).toFixed(1) + "km"
+          : straight !== undefined ? "직선거리로 약 " + Math.round(straight) + "km" : "이동시간을 확인하지 못했어요";
+        helicopter = "🚁 권역외상센터까지 " + distanceText + ". " + rules.helicopter.note;
       }
     }
     // 두 분류로 찾았는데 모두 일치가 없으면, 한 분류만 적용해 다시 찾는 버튼을 보여준다.

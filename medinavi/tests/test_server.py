@@ -185,7 +185,33 @@ class Realtime(unittest.TestCase):
         count = len(self.httpx.calls)
         self.app.realtime_cache["at"] = -1e9
         self.call()
-        self.assertEqual(len(self.httpx.calls), count + 2, "메시지는 5분에 한 번만 새로 불러와야 해요")
+        realtime_calls = 2 * (1 + len(self.app.realtime_neighbors()))   # 가용병상·중증질환 × (강원 + 목록에 있는 인접 시·도)
+        self.assertEqual(len(self.httpx.calls), count + realtime_calls, "메시지는 5분에 한 번만 새로 불러와야 해요")
+
+    def test_neighbor_regions(self):
+        # 인접 시·도: hospitals.json에 기관이 있는 시·도만 조회하고, 목록에 있는 기관만 남긴다. 인접 시·도만 실패하면 강원 값은 쓴다.
+        items = self.app.load_hospital_items() + [{"hpid": "G1", "sido": "경기도"}]
+        self.app.load_hospital_items = lambda: items
+        self.assertEqual(self.app.realtime_neighbors(), ["경기도"])
+        handler = self.httpx.handler
+
+        def with_gyeonggi(url, headers, params):
+            if params.get("STAGE1") == "경기도":
+                if self.mode == "gyeonggi_down":
+                    return 500, "error"
+                return 200, nmc_xml([{"hpid": "G1", "hvec": "4"}, {"hpid": "G9", "hvec": "9"}])
+            return handler(url, headers, params)
+        self.httpx.handler = with_gyeonggi
+        data = self.call()
+        self.assertEqual(data["hospitals"]["G1"]["er_available"], 4)
+        self.assertNotIn("G9", data["hospitals"], "목록에 없는 경기 기관은 빼야 해요")
+        self.assertIn("A1", data["hospitals"])
+        self.assertEqual(data["errors"], [])
+        self.app.realtime_cache["at"] = -1e9
+        self.mode = "gyeonggi_down"
+        data = self.call()
+        self.assertIn("A1", data["hospitals"])
+        self.assertTrue(any("인접 시·도 조회 실패(경기도)" in message for message in data["errors"]))
 
     def test_no_key_and_no_cache(self):
         app, httpx, _ = load_app()
@@ -195,6 +221,27 @@ class Realtime(unittest.TestCase):
         except app.HTTPException as exc:
             error = exc
         self.assertEqual(error.status_code, 503)
+
+
+class RefreshTool(unittest.TestCase):
+    def test_neighbor_filter(self):
+        # 인접 시·도 목록: 지정한 시·군 주소이고 지정 응급의료기관(권역·지역센터·지역기관)만 받는다.
+        sys.path.insert(0, str(TESTS_DIR.parent / "tools"))
+        import refresh_hospitals as tool
+        rows = {
+            "포천시": [{"hpid": "P1", "dutyAddr": "경기도 포천시 포천로 1648", "dutyEmclsName": "지역응급의료센터"},
+                      {"hpid": "P2", "dutyAddr": "경기도 포천시 어딘가", "dutyEmclsName": "응급실운영신고기관"},
+                      {"hpid": "X1", "dutyAddr": "경기도 가평군 어딘가", "dutyEmclsName": "지역응급의료기관"}],
+        }
+        tool.call = lambda operation, params, key, base: (rows.get(params.get("Q1"), []), None)
+        regions = {"neighbors": [{"sido": "경기도", "sigungu": ["포천시", "연천군"]}], "neighbor_types": ["권역응급의료센터", "지역응급의료센터", "지역응급의료기관"]}
+        found, errors = tool.fetch_neighbors("getEgytListInfoInqire", "key", "url", regions)
+        self.assertEqual(list(found), ["P1"])
+        self.assertEqual(found["P1"]["sido"], "경기도")
+        self.assertEqual(errors, [])
+        real = tool.load_regions()
+        self.assertEqual(real["home"]["sido"], "강원특별자치도")
+        self.assertEqual(sum(len(area["sigungu"]) for area in real["neighbors"]), 14)
 
 
 class SymptomParse(unittest.TestCase):

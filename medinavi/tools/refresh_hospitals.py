@@ -1,4 +1,4 @@
-"""강원 응급의료기관 목록을 국립중앙의료원 API로 다시 받아 data/hospitals.json과 비교한다.
+"""강원과 인접 시·도 응급의료기관 목록을 국립중앙의료원 API로 다시 받아 data/hospitals.json과 비교한다.
 
 실행 (medinavi 폴더에서):
     python tools/refresh_hospitals.py            # 바뀐 곳만 보여주고 파일은 그대로 둔다
@@ -7,6 +7,7 @@
 - 응급의료기관 목록정보 조회(getEgytListInfoInqire): 기관 유형, 이름, 주소, 전화, 좌표 비교
 - 외상센터 목록정보 조회(getStrmListInfoInqire): 외상센터인 기관을 trauma_center=true로 표시
 - 새로 생긴 기관은 --write 때 추가하고 진료과목은 '확인 필요'로 둔다 (이후 fetch_departments.py --write 실행).
+- 인접 시·도는 data/regions.json 의 시·군만, 지정 응급의료기관(neighbor_types)만 받는다. 각 기관에 sido(시·도)를 적는다.
 - 목록에서 사라진 기관은 자동으로 지우지 않고 알려만 준다. 지우려면 --remove-missing 을 함께 쓴다.
 인증키는 EMERGENCY_API_KEY (진료과목 조회와 같음). 한 달에 한 번 정도 실행을 권장한다.
 """
@@ -21,21 +22,60 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 from fetch_departments import BASE_URL, DATA_PATH, load_service_key  # noqa: E402
 from fetch_realtime_sample import call  # noqa: E402
 
-REGION_NAMES = ("강원특별자치도", "강원도")
-COMPARE_FIELDS = ("dutyEmcls", "dutyEmclsName", "dutyName", "dutyAddr", "dutyTel1", "dutyTel3", "wgs84Lat", "wgs84Lon")
+REGIONS_PATH = DATA_PATH.parent / "regions.json"
+COMPARE_FIELDS = ("dutyEmcls", "dutyEmclsName", "dutyName", "dutyAddr", "dutyTel1", "dutyTel3", "wgs84Lat", "wgs84Lon", "sido")
 FIELD_NAMES = {"dutyEmcls": "기관분류코드", "dutyEmclsName": "기관 유형", "dutyName": "기관명", "dutyAddr": "주소",
-               "dutyTel1": "대표전화", "dutyTel3": "응급실 전화", "wgs84Lat": "위도", "wgs84Lon": "경도"}
+               "dutyTel1": "대표전화", "dutyTel3": "응급실 전화", "wgs84Lat": "위도", "wgs84Lon": "경도", "sido": "시·도"}
 
 
-def fetch_region(operation, service_key, base_url):
-    """강원 전체 목록을 받아 {기관ID: 항목} 으로 돌려준다."""
+def load_regions():
+    return json.loads(REGIONS_PATH.read_text(encoding="utf-8-sig"))
+
+
+def fetch_home(operation, service_key, base_url, regions):
+    """강원 전체 목록을 받아 ({기관ID: 항목}, 조회한 이름, 오류)를 돌려준다."""
     last_error = None
-    for region in REGION_NAMES:
+    for region in regions["home"]["names"]:
         items, error = call(operation, {"Q0": region, "pageNo": 1, "numOfRows": 100}, service_key, base_url)
         if items:
+            for item in items:
+                item["sido"] = regions["home"]["sido"]
             return {item["hpid"]: item for item in items if item.get("hpid")}, region, None
         last_error = error or "항목 0개"
     return {}, None, last_error
+
+
+def fetch_neighbors(operation, service_key, base_url, regions, only_types=True):
+    """인접 시·도의 지정 시·군 목록을 받아 ({기관ID: 항목}, [오류])를 돌려준다."""
+    found, errors = {}, []
+    types = set(regions.get("neighbor_types", []))
+    for area in regions.get("neighbors", []):
+        for sigungu in area["sigungu"]:
+            params = {"Q0": area["sido"], "Q1": sigungu, "pageNo": 1, "numOfRows": 100}
+            items, error = call(operation, params, service_key, base_url)
+            if error:
+                errors.append(f"{area['sido']} {sigungu}: {error}")
+            for item in items:
+                # 주소가 다른 시·군이면 빼고, 응급실운영신고기관 등 지정 기관이 아니면 뺀다.
+                if sigungu not in (item.get("dutyAddr") or "") or not item.get("hpid"):
+                    continue
+                if only_types and types and item.get("dutyEmclsName") not in types:
+                    continue
+                item["sido"] = area["sido"]
+                found[item["hpid"]] = item
+    return found, errors
+
+
+def fetch_trauma(service_key, base_url, regions):
+    """강원과 인접 시·도의 외상센터를 ({기관ID: 항목}, 오류)로 돌려준다."""
+    found, error = fetch_home("getStrmListInfoInqire", service_key, base_url, regions)[0::2]
+    errors = [error] if error else []
+    for area in regions.get("neighbors", []):
+        items, area_error = call("getStrmListInfoInqire", {"Q0": area["sido"], "pageNo": 1, "numOfRows": 100}, service_key, base_url)
+        if area_error:
+            errors.append(f"{area['sido']}: {area_error}")
+        found.update({item["hpid"]: item for item in items if item.get("hpid")})
+    return found, "; ".join(errors) or None
 
 
 def same_value(field, old, new):
@@ -50,7 +90,7 @@ def same_value(field, old, new):
 
 
 def main():
-    parser = argparse.ArgumentParser(description="강원 응급의료기관 목록 갱신")
+    parser = argparse.ArgumentParser(description="강원·인접 시·도 응급의료기관 목록 갱신")
     parser.add_argument("--write", action="store_true", help="바뀐 내용을 hospitals.json 에 반영")
     parser.add_argument("--remove-missing", action="store_true", help="--write 와 함께 쓰면 목록에서 사라진 기관을 지움")
     parser.add_argument("--base-url", default=BASE_URL, help=argparse.SUPPRESS)
@@ -59,14 +99,25 @@ def main():
     service_key = load_service_key()
     data = json.loads(DATA_PATH.read_text(encoding="utf-8-sig"))
     current = {item["hpid"]: item for item in data["items"]}
+    known = set(current)
 
-    latest, region, error = fetch_region("getEgytListInfoInqire", service_key, args.base_url)
+    regions = load_regions()
+    latest, region, error = fetch_home("getEgytListInfoInqire", service_key, args.base_url, regions)
     if not latest:
         sys.exit(f"응급의료기관 목록을 받지 못했어요: {error}")
-    trauma, _, trauma_error = fetch_region("getStrmListInfoInqire", service_key, args.base_url)
+    neighbors, neighbor_errors = fetch_neighbors("getEgytListInfoInqire", service_key, args.base_url, regions)
+    if neighbor_errors:
+        # 인접 시·도 조회가 일부 실패하면 그 시·군 기관이 '사라진 기관'으로 잘못 보이지 않도록 비교에서 뺀다.
+        print("[인접 시·도 조회 실패] " + " / ".join(neighbor_errors))
+        failed_sido = {message.split(" ")[0] for message in neighbor_errors}
+        compared = {hpid: item for hpid, item in current.items() if item.get("sido") not in failed_sido}
+    else:
+        compared = current
+    latest.update(neighbors)
+    trauma, trauma_error = fetch_trauma(service_key, args.base_url, regions)
 
-    added = [hpid for hpid in latest if hpid not in current]
-    missing = [hpid for hpid in current if hpid not in latest]
+    added = [hpid for hpid in latest if hpid not in known]
+    missing = [hpid for hpid in compared if hpid not in latest]
     changes = {}
     for hpid in latest.keys() & current.keys():
         diff = [(field, current[hpid].get(field), latest[hpid].get(field)) for field in COMPARE_FIELDS
@@ -74,10 +125,10 @@ def main():
         if diff:
             changes[hpid] = diff
 
-    print(f"조회 지역: {region} · API {len(latest)}곳 · hospitals.json {len(current)}곳")
+    print(f"조회 지역: {region} + 인접 시·도 {len(neighbors)}곳 · API {len(latest)}곳 · hospitals.json {len(current)}곳")
     print(f"\n[새로 생긴 기관] {len(added)}곳")
     for hpid in added:
-        print(f"  + {latest[hpid].get('dutyName')} ({hpid}) · {latest[hpid].get('dutyEmclsName')}")
+        print(f"  + {latest[hpid].get('dutyName')} ({hpid}) · {latest[hpid].get('dutyEmclsName')} · {latest[hpid].get('sido')}")
     print(f"\n[목록에서 사라진 기관] {len(missing)}곳")
     for hpid in missing:
         print(f"  - {current[hpid].get('dutyName')} ({hpid}) · {current[hpid].get('dutyEmclsName')}")

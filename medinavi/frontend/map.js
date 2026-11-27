@@ -107,13 +107,15 @@ function showHospitalDetail(hospital, data, savedRoute = null) {
   const details = [
     ["기관명", hospital.dutyName],
     ["응급의료기관 유형", hospital.dutyEmclsName],
+    // 인접 시·도 병원이면 시·도를 함께 보여준다.
+    window.medinaviJudge?.regionTag(hospital) && ["시·도", hospital.sido + " (타 시·도 · 표준지침상 더 가까우면 이송 가능)"],
     // 추가: 국립중앙의료원 자료의 등록 진료과목. 비어 있으면 '확인 필요'로 표시된다.
     ["등록 진료과목", (hospital.departments || []).join(", ")],
     ["주소", hospital.dutyAddr],
     ["응급실 연락처", hospital.dutyTel3],
     ["정보 출처", data.source],
     ["조회 시점", timeText],
-  ];
+  ].filter(Boolean);
   fields.replaceChildren();
   for (const [label, value] of details) {
     const name = document.createElement("dt");
@@ -442,7 +444,7 @@ function setupHospitalSearch(data){
     judge.remember(evaluated);
     const mismatched = evaluated.filter(entry => entry.verdict === "불일치");
     status.textContent = "병원별 예상 이동시간을 조회하고 있어요.";
-    const routed = await judge.lookupRoutes(evaluated.filter(entry => entry.verdict !== "불일치"), origin, controller.signal, lookupRoute);
+    const routed = await judge.lookupRoutes(evaluated.filter(entry => entry.verdict !== "불일치"), origin, controller.signal, lookupRoute, maxMinutes);
     if (!routed) return;
     const within = routed.filter(({route}) => route && route.duration_ms <= maxMinutes * 60000).sort((a, b) => a.route.duration_ms - b.route.duration_ms);
     const matches = within.filter(entry => entry.verdict === "일치");
@@ -459,7 +461,7 @@ function setupHospitalSearch(data){
       button.dataset.hpid = hospital.hpid;
       const minutes = Math.ceil(route.duration_ms / 60000);
       const distance = (route.distance_m / 1000).toFixed(1);
-      button.textContent = (index + 1) + ". " + hospital.dutyName + " (" + (hospital.dutyEmclsName || "구분 확인 필요") + ") · 약 " + minutes + "분 · " + distance + "km";
+      button.textContent = (index + 1) + ". " + hospital.dutyName + " (" + judge.typeText(hospital, "구분 확인 필요") + ") · 약 " + minutes + "분 · " + distance + "km";
       if (checks.length) button.textContent += "\n조건: " + checks.map(judge.checkText).join(" · ");
       // 응급실 실시간 가용병상 한 줄 요약과 혼잡도 색 띠
       const realtimeText = window.medinaviRealtime?.summary(hospital.hpid);

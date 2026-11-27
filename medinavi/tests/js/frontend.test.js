@@ -30,6 +30,7 @@ function hospitalsResponse() {
     if (item.departments) item.departments = [...new Set(item.departments.map(name => name === "구강안면외과" ? "구강악안면외과" : name))];
   }
   data.illness_types = ILLNESS;
+  data.home_sido = "강원특별자치도";
   return data;
 }
 
@@ -704,6 +705,35 @@ async function setAge(page, value, unit = "세") {
   page.els["confirm-age-unit"].value = unit;
   await page.els["confirm-age"].fire("input");
 }
+
+test("인접 시·도: 경기 등 타 시·도 병원도 후보로 넣고 표시, 직선거리로 닿을 수 없는 병원은 길찾기 안 함", async () => {
+  const tweak = (hospitals, realtime) => {
+    const center = hospitals.items.find(item => item.dutyEmclsName === "지역응급의료센터");
+    const live = JSON.parse(JSON.stringify(realtime.hospitals[hospitals.items[0].hpid]));   // 병상 여유가 있는 실시간 정보
+    realtime.hospitals.G_NEAR = live;
+    realtime.hospitals.G_FAR = live;
+    // 가까운 경기 병원(가짜 길찾기에서 순서가 0번이라 가장 가까움)과, 직선거리 250km 넘는 먼 병원
+    hospitals.items.unshift({...JSON.parse(JSON.stringify(center)), hpid: "G_NEAR", dutyName: "경기가까운병원", sido: "경기도", wgs84Lat: "37.7", wgs84Lon: "128.8"});
+    hospitals.items.push({...JSON.parse(JSON.stringify(center)), hpid: "G_FAR", dutyName: "경북먼병원", sido: "경상북도", wgs84Lat: "35.6", wgs84Lon: "128.0"});
+  };
+  const page = createPage({tweak, symptom: {category_id: "respiratory", secondary_category_id: null, symptom_keywords: [], is_child: false, max_minutes: null}});
+  await start(page);
+  await searchSymptom(page, {minutes: "120"});
+  const results = page.buttonsIn("recommend-results");
+  assert.strictEqual(results[0].dataset.hpid, "G_NEAR");
+  assert.match(results[0].textContent, /^1\. 경기가까운병원 \(지역응급의료센터 · 타 시·도\(경기도\)\)/);
+  const asked = page.routeRequests.map(params => params.get("hospital_id"));
+  assert.ok(asked.includes("G_NEAR") && !asked.includes("G_FAR"), "120분이면 직선 240km 넘는 병원은 길찾기를 하지 않아요");
+  assert.ok(asked.length < page.hospitals.items.length);
+  // 강원 병원(시·도 정보 없음 또는 강원)에는 표시를 붙이지 않는다.
+  assert.ok(results.slice(1).every(button => !/타 시·도/.test(button.textContent)));
+  // 상세에 시·도 줄
+  await results[0].fire("click");
+  assert.ok(page.els["detail-fields"].children.some(item => /경기도 \(타 시·도/.test(item.textContent)));
+  // 시간 제한을 넉넉히 하면 먼 병원도 길찾기를 한다.
+  await searchSymptom(page, {minutes: "300"});
+  assert.ok(page.routeRequests.some(params => params.get("hospital_id") === "G_FAR"));
+});
 
 test("나이: AI가 읽은 나이를 채우고, 나이로 소아 여부와 나이별 기준(생후 3개월 미만 발열)을 정함", async () => {
   const page = createPage({symptom: sent => sent.previous ? {category_id: "fever", secondary_category_id: null, symptom_keywords: [], is_child: null, max_minutes: null, age_months: null}

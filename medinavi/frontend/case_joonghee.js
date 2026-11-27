@@ -217,7 +217,7 @@ window.medinaviCase = (() => {
       };
       row("이번 환자 수용", info.mark + " " + info.label + (contact ? " · " + time(contact.at) : ""), info.cls);
       row("예상 이동", candidate.minutes ? "약 " + candidate.minutes + "분" + (candidate.km ? " · " + candidate.km + "km" : "") + " (표시 당시 · 일반 자동차)" : "확인 필요");
-      row("기관 유형", hospital.dutyEmclsName || "확인 필요");
+      row("기관 유형", window.medinaviJudge?.typeText(hospital, "확인 필요") || hospital.dutyEmclsName || "확인 필요");
       row("병상 (공공데이터)", window.medinaviRealtime?.summary?.(candidate.hpid) || "미제공 (0이나 불가가 아님)");
       row("연락처", phone ? phone.kind + " " + phone.number : "등록 번호 없음 · 상황실 절차로");
       item.append(head, dl);
