@@ -106,9 +106,13 @@ window.medinaviCase = (() => {
     return true;
   }
 
-  // 공공데이터에 등록된 번호만 쓴다. 형식이 아니면 전화 링크를 만들지 않는다.
+  // 공공데이터에 등록된 번호만 쓴다. 걸 수 있는 형식이 아니면 전화 링크를 만들지 않는다 (번호 정리는 call.js).
   function phoneOf(hospital) {
-    const clean = value => (/^0\d{1,3}-?\d{3,4}-?\d{4}$/.test(String(value ?? "").trim()) ? String(value).trim() : "");
+    const call = window.medinaviCall;
+    const clean = value => {
+      const number = call ? call.dialable(value) : (/^0\d{1,3}-?\d{3,4}-?\d{4}$/.test(String(value ?? "").trim()) ? String(value).replace(/-/g, "") : "");
+      return number ? (call ? call.pretty(number) : number) : "";
+    };
     const er = clean(hospital?.dutyTel3);
     const main = clean(hospital?.dutyTel1);
     return er ? {number: er, kind: "응급실"} : main ? {number: main, kind: "대표번호"} : null;

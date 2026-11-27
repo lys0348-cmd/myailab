@@ -190,7 +190,8 @@ class Realtime(unittest.TestCase):
 
     def test_neighbor_regions(self):
         # 인접 시·도: hospitals.json에 기관이 있는 시·도만 조회하고, 목록에 있는 기관만 남긴다. 인접 시·도만 실패하면 강원 값은 쓴다.
-        items = self.app.load_hospital_items() + [{"hpid": "G1", "sido": "경기도"}]
+        home = [item for item in self.app.load_hospital_items() if item.get("sido") in (None, "강원특별자치도")]
+        items = home + [{"hpid": "G1", "sido": "경기도"}]
         self.app.load_hospital_items = lambda: items
         self.assertEqual(self.app.realtime_neighbors(), ["경기도"])
         handler = self.httpx.handler
